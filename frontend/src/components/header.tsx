@@ -1,10 +1,10 @@
-'use client'
+"use client"
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { cn } from '@/lib/utils'
+import { ThemeToggle } from '@/components/theme-toggle'
 import { LayoutGrid, MessagesSquare } from 'lucide-react'
-import { ThemeToggle } from './theme-toggle'
+import { cn } from '@/lib/utils'
+import { usePathname } from 'next/navigation'
 
 export function Header() {
   const pathname = usePathname()
@@ -63,7 +63,9 @@ export function Header() {
             </Link>
           </nav>
         </div>
-        <ThemeToggle />
+        <div className="flex items-center space-x-2">
+          <ThemeToggle />
+        </div>
       </div>
     </header>
   )

@@ -1,7 +1,10 @@
+"use client"
+
 import * as React from "react"
 import { Check, ChevronsUpDown, RefreshCw } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { SystemPromptSettings } from '@/components/system-prompt-settings'
 import {
   Popover,
   PopoverContent,
@@ -13,12 +16,14 @@ interface ModelSelectorProps {
   selectedModel: ModelInfo | null
   onModelSelect: (model: ModelInfo) => void
   models?: ModelInfo[]
+  onSystemPromptChange?: (prompt: string | null) => void
 }
 
 export function ModelSelector({
   selectedModel,
   onModelSelect,
   models: propModels,
+  onSystemPromptChange,
 }: ModelSelectorProps) {
   const [open, setOpen] = React.useState(false)
   const [models, setModels] = React.useState<ModelInfo[]>(propModels || [])
@@ -93,7 +98,7 @@ export function ModelSelector({
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            className="w-[180px] justify-between h-8 text-xs"
+            className="w-[250px] justify-between h-8 text-xs"
             disabled={loading}
             size="sm"
           >
@@ -101,7 +106,7 @@ export function ModelSelector({
             <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[180px] p-2">
+        <PopoverContent className="w-[250px] p-2">
           <div className="space-y-4">
             {azureModels.length > 0 && (
               <div>
@@ -170,6 +175,7 @@ export function ModelSelector({
         <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} />
         <span className="sr-only">Refresh models</span>
       </Button>
+      {onSystemPromptChange && <SystemPromptSettings onSystemPromptChange={onSystemPromptChange} />}
     </div>
   )
 }

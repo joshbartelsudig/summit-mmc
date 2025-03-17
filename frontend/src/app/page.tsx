@@ -98,6 +98,7 @@ export default function Home() {
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null)
+  const [systemPrompt, setSystemPrompt] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Fetch models on component mount
@@ -236,10 +237,23 @@ export default function Home() {
 
     try {
       setIsLoading(true);
+      console.log('Current system prompt:', systemPrompt); // Debug log
 
       const endpoint = streamingEnabled ?
         'http://localhost:8000/api/v1/chat/stream' :
         'http://localhost:8000/api/v1/chat';
+
+      const requestBody = {
+        messages: [...messages, userMessage].map(m => ({
+          role: m.role,
+          content: m.content
+        })),
+        model: selectedModel.id,
+        stream: streamingEnabled,
+        system_prompt: systemPrompt  // Fixed: Changed from systemPrompt to system_prompt to match backend schema
+      };
+
+      console.log('Request body:', requestBody); // Debug log
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -247,14 +261,7 @@ export default function Home() {
           'Content-Type': 'application/json',
           'Accept': streamingEnabled ? 'text/event-stream' : 'application/json',
         },
-        body: JSON.stringify({
-          messages: [...messages, userMessage].map(m => ({
-            role: m.role,
-            content: m.content
-          })),
-          model: selectedModel.id,
-          stream: streamingEnabled
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
@@ -315,11 +322,9 @@ export default function Home() {
   };
 
   return (
-
-
-      <div className="flex flex-1 overflow-hidden">
-        <Toaster />
-        <div className="w-64 hidden md:block">
+    <div className="flex flex-1 overflow-hidden">
+      <Toaster />
+      <div className="w-64 hidden md:block">
         <ChatHistory
           sessions={sessions}
           onSelectSession={handleSelectSession}
@@ -332,13 +337,12 @@ export default function Home() {
       {/* Main Chat Area */}
       <div className="flex-1">
         <Card className="h-full flex flex-col rounded-none border-0 md:border-l">
-          <CardHeader className="border-b px-4 py-2 flex flex-row items-center justify-between chat-header">
+          <CardHeader className="border-b px-4 py-2 flex flex-row items-center justify-between">
             <div className="flex items-center gap-4">
               <CardDescription className="text-xs text-muted-foreground">
-                {
-                  selectedModel ?
-                  `Using ${selectedModel.id.includes('anthropic') || selectedModel.id.includes('amazon') ? 'Amazon Bedrock' : 'Azure OpenAI'}` :
-                  'Select a model to start chatting'
+                {selectedModel
+                  ? `Using ${selectedModel.id.includes('anthropic') || selectedModel.id.includes('amazon') ? 'Amazon Bedrock' : 'Azure OpenAI'}`
+                  : 'Select a model to start chatting'
                 }
               </CardDescription>
               <div className="flex items-center space-x-2">
@@ -351,30 +355,33 @@ export default function Home() {
                 <Label htmlFor="streaming" className="text-xs cursor-pointer">Enable streaming</Label>
               </div>
             </div>
-            <ModelSelector
-              selectedModel={selectedModel}
-              onModelSelect={setSelectedModel}
-              models={models}
-            />
+            <div className="flex items-center gap-2">
+              <ModelSelector
+                models={models}
+                selectedModel={selectedModel}
+                onModelSelect={setSelectedModel}
+                onSystemPromptChange={setSystemPrompt}
+              />
+            </div>
           </CardHeader>
           <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
-              {messages.length === 0 ? (
-                <div className="flex h-full items-center justify-center text-center">
-                  <div className="space-y-2">
-                    <h3 className="text-lg font-medium">Welcome to AI Chat</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Start a conversation with Azure OpenAI or Amazon Bedrock models.
-                    </p>
-                  </div>
+            {messages.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-center">
+                <div className="space-y-2">
+                  <h3 className="text-lg font-medium">Welcome to AI Chat</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Start a conversation with Azure OpenAI or Amazon Bedrock models.
+                  </p>
                 </div>
-              ) : (
-                <div className="space-y-4 pb-4">
-                  {messages.map((message, index) => (
-                    <ChatMessage key={index} message={message} />
-                  ))}
-                  <div ref={messagesEndRef} />
-                </div>
-              )}
+              </div>
+            ) : (
+              <div className="space-y-4 pb-4">
+                {messages.map((message, index) => (
+                  <ChatMessage key={index} message={message} />
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+            )}
           </CardContent>
           <CardFooter className="border-t p-4 bg-background chat-footer">
             <form onSubmit={handleSubmit} className="flex w-full items-center space-x-2">
@@ -392,8 +399,7 @@ export default function Home() {
             </form>
           </CardFooter>
         </Card>
-        </div>
       </div>
-
+    </div>
   )
 }
