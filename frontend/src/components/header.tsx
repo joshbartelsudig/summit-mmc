@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { LayoutGrid, MessagesSquare } from 'lucide-react'
+import { LayoutGrid, MessagesSquare, Link2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { usePathname } from 'next/navigation'
 
@@ -59,6 +59,18 @@ export function Header() {
                   <path d="M18 2v4"></path>
                 </svg>
                 <span>Compare</span>
+              </div>
+            </Link>
+            <Link
+              href="/chain"
+              className={cn(
+                "text-xs font-medium transition-colors hover:text-primary px-2 py-1",
+                pathname === "/chain" ? "text-primary bg-accent rounded" : "text-muted-foreground"
+              )}
+            >
+              <div className="flex items-center gap-1">
+                <Link2 className="h-3 w-3" />
+                <span>Chain</span>
               </div>
             </Link>
           </nav>
