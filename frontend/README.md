@@ -18,6 +18,12 @@ A Next.js-based chat interface for interacting with multiple AI models, allowing
   - Easy model switching and selection
   - Customizable system prompts per model
 
+- **Model Chaining**
+  - Sequential processing through multiple models
+  - Configurable system prompts for each model in the chain
+  - Visualization of intermediate and final results
+  - Tabbed interface for configuration and results
+
 - **User Experience**
   - Responsive design for all screen sizes
   - Dark/Light theme support
@@ -40,6 +46,7 @@ A Next.js-based chat interface for interacting with multiple AI models, allowing
 src/
 ├── app/                    # Next.js app router pages
 │   ├── compare/           # Model comparison page
+│   ├── chain/             # Model chaining page
 │   └── page.tsx           # Main chat interface
 ├── components/            # React components
 │   ├── ui/               # shadcn/ui components

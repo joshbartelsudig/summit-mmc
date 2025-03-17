@@ -9,6 +9,7 @@ A modern web application that provides a unified interface for interacting with 
   - Amazon Bedrock models (Claude, Llama 2)
   - Real-time streaming responses
   - Side-by-side model comparison
+  - Model chaining for sequential processing
   - Custom system prompts for each chat
 
 - **Modern Web Interface**

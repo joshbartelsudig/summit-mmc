@@ -13,6 +13,7 @@ A FastAPI-based backend service that provides a unified interface for interactin
   - Real-time streaming responses
   - Session management and history
   - Model comparison functionality
+  - Model chaining for sequential processing
   - Markdown and code formatting support
   - Customizable system prompts
   - Default and custom prompt handling
@@ -163,6 +164,23 @@ pytest --cov=app tests/  # With coverage
   ```
   - Compares responses from multiple models
   - Supports custom system prompts for both models
+
+#### Model Chaining
+- `POST /api/v1/chat`
+  ```json
+  {
+    "messages": [
+      {"role": "user", "content": "Your message"},
+      {"role": "assistant", "content": "First model analysis: ..."}
+    ],
+    "model": "gpt-4",
+    "system_prompt": "custom-system-prompt-for-second-model"
+  }
+  ```
+  - Allows sequential processing through multiple models
+  - First model processes the initial user input
+  - Second model receives both the original input and the first model's output
+  - Supports custom system prompts for each model in the chain
 
 ### Environment Variables
 
