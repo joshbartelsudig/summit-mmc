@@ -1,0 +1,203 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 20 14.3% 4.1%;
+    --card: 0 0% 100%;
+    --card-foreground: 20 14.3% 4.1%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 14.3% 4.1%;
+    --primary: 24.6 95% 53.1%;
+    --primary-foreground: 60 9.1% 97.8%;
+    --secondary: 60 4.8% 95.9%;
+    --secondary-foreground: 24 9.8% 10%;
+    --muted: 60 4.8% 95.9%;
+    --muted-foreground: 25 5.3% 44.7%;
+    --accent: 60 4.8% 95.9%;
+    --accent-foreground: 24 9.8% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 60 9.1% 97.8%;
+    --border: 20 5.9% 90%;
+    --input: 20 5.9% 90%;
+    --ring: 24.6 95% 53.1%;
+    --radius: 0.5rem;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+  }
+
+  .dark {
+    --background: 20 14.3% 4.1%;
+    --foreground: 60 9.1% 97.8%;
+    --card: 20 14.3% 4.1%;
+    --card-foreground: 60 9.1% 97.8%;
+    --popover: 20 14.3% 4.1%;
+    --popover-foreground: 60 9.1% 97.8%;
+    --primary: 20.5 90.2% 48.2%;
+    --primary-foreground: 60 9.1% 97.8%;
+    --secondary: 12 6.5% 15.1%;
+    --secondary-foreground: 60 9.1% 97.8%;
+    --muted: 12 6.5% 15.1%;
+    --muted-foreground: 24 5.4% 63.9%;
+    --accent: 12 6.5% 15.1%;
+    --accent-foreground: 60 9.1% 97.8%;
+    --destructive: 0 72.2% 50.6%;
+    --destructive-foreground: 60 9.1% 97.8%;
+    --border: 12 6.5% 15.1%;
+    --input: 12 6.5% 15.1%;
+    --ring: 20.5 90.2% 48.2%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /* Set the layout to use the full viewport height */
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+}
+
+/* Chat layout styles */
+.chat-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.chat-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.chat-header,
+.chat-footer {
+  flex-shrink: 0;
+}
+
+/* Custom styles for Mermaid diagrams */
+.mermaid {
+  background-color: #1e1e2e;
+  border-radius: 0.375rem;
+  padding: 1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+}
+
+.mermaid .label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  color: #f8f8f2 !important;
+  font-size: 14px;
+}
+
+.mermaid .node rect,
+.mermaid .node circle,
+.mermaid .node ellipse,
+.mermaid .node polygon,
+.mermaid .node path {
+  fill: #44475a !important;
+  stroke: #6272a4 !important;
+}
+
+.mermaid .cluster rect {
+  fill: #282a36 !important;
+  stroke: #6272a4 !important;
+}
+
+.mermaid .edgePath .path {
+  stroke: #f8f8f2 !important;
+}
+
+.mermaid .edgeLabel {
+  background-color: #282a36 !important;
+  color: #f8f8f2 !important;
+}
+
+/* Gantt chart specific styles */
+.mermaid .grid .tick line {
+  stroke: rgba(255, 255, 255, 0.1) !important;
+}
+
+.mermaid .grid .tick text {
+  fill: #f8f8f2 !important;
+}
+
+.mermaid .taskText {
+  fill: #f8f8f2 !important;
+  font-size: 14px !important;
+}
+
+.mermaid .taskTextOutsideRight {
+  fill: #f8f8f2 !important;
+  font-size: 14px !important;
+}
+
+.mermaid .sectionTitle {
+  fill: #bd93f9 !important;
+  font-size: 14px !important;
+  font-weight: bold !important;
+}
+
+.mermaid .task {
+  stroke: #6272a4 !important;
+}
+
+.mermaid .section0,
+.mermaid .section2,
+.mermaid .section4,
+.mermaid .section6,
+.mermaid .section8 {
+  fill: #44475a !important;
+  opacity: 0.6 !important;
+}
+
+.mermaid .section1,
+.mermaid .section3,
+.mermaid .section5,
+.mermaid .section7,
+.mermaid .section9 {
+  fill: #282a36 !important;
+  opacity: 0.6 !important;
+}
+
+.mermaid .today {
+  stroke: #ff5555 !important;
+  stroke-width: 2px !important;
+}
+
+/* Code block styles */
+pre code.hljs {
+  display: block;
+  overflow-x: auto;
+  padding: 1em;
+  color: #e9e9e9;
+  background: #1e1e2e;
+  border-radius: 0.375rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+code.hljs {
+  padding: 3px 5px;
+}
