@@ -13,7 +13,7 @@ from app.services.model_router import model_router
 router = APIRouter()
 
 # System prompt to encourage proper markdown formatting
-MARKDOWN_SYSTEM_PROMPT = """
+DEFAULT_MARKDOWN_SYSTEM_PROMPT = """
 You MUST format your responses using proper markdown formatting.
 
 Rules for code blocks:
@@ -93,9 +93,12 @@ async def chat(request: ChatRequest):
         messages = list(request.messages)
         system_content = None
 
+        # Use custom system prompt if provided, otherwise use default
+        system_prompt = request.system_prompt if request.system_prompt else DEFAULT_MARKDOWN_SYSTEM_PROMPT
+
         if request.model.startswith("anthropic.claude"):
             # For Anthropic models, system message needs to be handled differently
-            system_content = MARKDOWN_SYSTEM_PROMPT
+            system_content = system_prompt
             non_system_messages = []
             for msg in messages:
                 if msg.role == "system":
@@ -106,7 +109,7 @@ async def chat(request: ChatRequest):
         else:
             # For other models like GPT, add system message if not present
             if not any(msg.role == "system" for msg in messages):
-                messages.insert(0, Message(role="system", content=MARKDOWN_SYSTEM_PROMPT))
+                messages.insert(0, Message(role="system", content=system_prompt))
 
         # Route the request to the appropriate provider
         response = await model_router.route_chat_completion(
@@ -145,12 +148,18 @@ async def chat_stream(request: ChatRequest):
             messages = list(request.messages)
             system_content = None
 
+            # Use custom system prompt if provided, otherwise use default
+            system_prompt = request.system_prompt if request.system_prompt else DEFAULT_MARKDOWN_SYSTEM_PROMPT
+            print("Streaming endpoint - System prompt:", system_prompt)  # Debug log
+
             if request.model.startswith("gpt"):
                 # Add system message if not already present
                 if not any(msg.role == "system" for msg in messages):
-                    messages.insert(0, Message(role="system", content=MARKDOWN_SYSTEM_PROMPT))
+                    messages.insert(0, Message(role="system", content=system_prompt))
+                    print("Added system message:", messages[0])  # Debug log
 
                 # Azure OpenAI streaming
+                print("Final messages before API call:", messages)  # Debug log
                 response = model_router.azure_client.client.chat.completions.create(
                     model=request.model,
                     messages=[{"role": msg.role, "content": msg.content} for msg in messages],
@@ -207,11 +216,11 @@ async def chat_stream(request: ChatRequest):
             elif request.model.startswith("anthropic.claude"):
                 # Format messages for Claude
                 messages = []
-                system_message = MARKDOWN_SYSTEM_PROMPT
+                system_message = system_prompt
 
                 for msg in request.messages:
                     if msg.role == "system":
-                        system_message = msg.content + "\n\n" + MARKDOWN_SYSTEM_PROMPT
+                        system_message = msg.content + "\n\n" + system_prompt
                     else:
                         messages.append(msg)
 
@@ -355,11 +364,11 @@ async def chat_stream(request: ChatRequest):
                     if msg.role == "system":
                         has_system = True
                         # Append markdown formatting instructions to existing system message
-                        msg.content += "\n\n" + MARKDOWN_SYSTEM_PROMPT
+                        msg.content += "\n\n" + system_prompt
                         break
 
                 if not has_system:
-                    messages.insert(0, Message(role="system", content=MARKDOWN_SYSTEM_PROMPT))
+                    messages.insert(0, Message(role="system", content=system_prompt))
 
                 # Llama streaming with [INST] and <<SYS>> tags
                 client = model_router.bedrock_client
@@ -433,11 +442,11 @@ async def chat_stream(request: ChatRequest):
                     if msg.role == "system":
                         has_system = True
                         # Append markdown formatting instructions to existing system message
-                        msg.content += "\n\n" + MARKDOWN_SYSTEM_PROMPT
+                        msg.content += "\n\n" + system_prompt
                         break
 
                 if not has_system:
-                    messages.insert(0, Message(role="system", content=MARKDOWN_SYSTEM_PROMPT))
+                    messages.insert(0, Message(role="system", content=system_prompt))
 
                 # Mistral streaming with [INST] tags
                 client = model_router.bedrock_client
@@ -512,11 +521,11 @@ async def chat_stream(request: ChatRequest):
                     if msg.role == "system":
                         has_system = True
                         # Append markdown formatting instructions to existing system message
-                        msg.content += "\n\n" + MARKDOWN_SYSTEM_PROMPT
+                        msg.content += "\n\n" + system_prompt
                         break
 
                 if not has_system:
-                    messages.insert(0, Message(role="system", content=MARKDOWN_SYSTEM_PROMPT))
+                    messages.insert(0, Message(role="system", content=system_prompt))
 
                 # AI21 streaming with [INST] tags
                 client = model_router.bedrock_client
@@ -598,11 +607,11 @@ async def chat_stream(request: ChatRequest):
                         if msg.role == "system":
                             has_system = True
                             # Append markdown formatting instructions to existing system message
-                            msg.content += "\n\n" + MARKDOWN_SYSTEM_PROMPT
+                            msg.content += "\n\n" + system_prompt
                             break
 
                     if not has_system:
-                        messages.insert(0, Message(role="system", content=MARKDOWN_SYSTEM_PROMPT))
+                        messages.insert(0, Message(role="system", content=system_prompt))
 
                     response = await chat(request)
                     content = response.choices[0].message.content

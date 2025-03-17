@@ -15,6 +15,7 @@ class ChatRequest(BaseModel):
     model: str
     stream: bool = False
     inference_profile_arn: Optional[str] = None
+    system_prompt: Optional[str] = None  # New field for custom system prompt
 
 class ChatChoice(BaseModel):
     """Chat choice model for response"""
