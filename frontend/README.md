@@ -8,6 +8,7 @@ A Next.js-based chat interface for interacting with multiple AI models, allowing
   - Real-time chat with AI models
   - Support for multiple model providers (Azure OpenAI, Amazon Bedrock)
   - Dynamic model selection
+  - Custom system prompts for model behavior
   - Markdown rendering with syntax highlighting
   - Code block formatting with language detection
 
@@ -15,6 +16,7 @@ A Next.js-based chat interface for interacting with multiple AI models, allowing
   - Side-by-side model response comparison
   - Simultaneous prompting of two models
   - Easy model switching and selection
+  - Customizable system prompts per model
 
 - **User Experience**
   - Responsive design for all screen sizes
@@ -44,7 +46,9 @@ src/
 │   ├── chat-history.tsx  # Chat history sidebar
 │   ├── chat-message.tsx  # Individual message component
 │   ├── code-block.tsx    # Code block renderer
-│   └── header.tsx        # Application header
+│   ├── header.tsx        # Application header
+│   ├── model-selector.tsx # Model selection with system prompt
+│   └── system-prompt-settings.tsx # System prompt configuration
 ├── lib/                  # Utility functions
 ├── types/                # TypeScript type definitions
 └── hooks/               # Custom React hooks
@@ -96,7 +100,7 @@ The frontend communicates with a backend API that provides model interaction and
 #### Chat Operations
 - `POST /api/v1/chat`
   - Initiates a new chat message
-  - Body: `{ message: string, model: string, sessionId?: string }`
+  - Body: `{ message: string, model: string, sessionId?: string, system_prompt?: string }`
   - Response: Complete message response
 
 - `POST /api/v1/chat/stream`
@@ -125,7 +129,7 @@ The frontend communicates with a backend API that provides model interaction and
 #### Model Comparison
 - `POST /api/v1/compare`
   - Compares responses from two models
-  - Body: `{ prompt: string, modelA: string, modelB: string }`
+  - Body: `{ prompt: string, modelA: string, modelB: string, system_prompt?: string }`
   - Response: Streamed responses from both models
 
 ### Error Handling
@@ -157,7 +161,8 @@ const response = await fetch('/api/v1/chat/stream', {
   body: JSON.stringify({
     message: "Your prompt here",
     model: "gpt-4",
-    sessionId: "optional-session-id"
+    sessionId: "optional-session-id",
+    system_prompt: "optional-system-prompt"
   })
 });
 

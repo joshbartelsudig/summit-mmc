@@ -14,7 +14,8 @@ A FastAPI-based backend service that provides a unified interface for interactin
   - Session management and history
   - Model comparison functionality
   - Markdown and code formatting support
-  - System prompts for consistent responses
+  - Customizable system prompts
+  - Default and custom prompt handling
 
 - **API Features**
   - RESTful API design
@@ -129,13 +130,15 @@ pytest --cov=app tests/  # With coverage
   {
     "message": "Your message",
     "model": "gpt-4",
-    "session_id": "optional-session-id"
+    "session_id": "optional-session-id",
+    "system_prompt": "optional-custom-prompt"
   }
   ```
 
 - `POST /api/v1/chat/stream`
   - Streaming version of the chat endpoint
   - Returns Server-Sent Events (SSE)
+  - Supports custom system prompts
 
 #### Model Management
 - `GET /api/v1/models`
@@ -150,7 +153,16 @@ pytest --cov=app tests/  # With coverage
 
 #### Model Comparison
 - `POST /api/v1/compare`
+  ```json
+  {
+    "prompt": "Your prompt",
+    "modelA": "gpt-4",
+    "modelB": "claude-v2",
+    "system_prompt": "optional-custom-prompt"
+  }
+  ```
   - Compares responses from multiple models
+  - Supports custom system prompts for both models
 
 ### Environment Variables
 
@@ -159,6 +171,7 @@ pytest --cov=app tests/  # With coverage
 - `AZURE_OPENAI_ENDPOINT` - Azure OpenAI endpoint URL
 - `AZURE_OPENAI_API_VERSION` - API version (default: "2023-05-15")
 - `AZURE_OPENAI_DEPLOYED_MODELS` - Comma-separated list of deployed models
+- `DEFAULT_SYSTEM_PROMPT` - Default system prompt for all models (optional)
 
 #### AWS Configuration
 - `AWS_REGION` - AWS region (default: "us-east-1")
