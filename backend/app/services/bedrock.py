@@ -785,7 +785,8 @@ class BedrockClient:
             stream = response.get('body')
             for event in stream:
                 if 'chunk' in event:
-                    chunk_data = json.loads(event['chunk']['bytes'].decode())
+                    chunk_bytes = event['chunk']['bytes']
+                    chunk_data = json.loads(chunk_bytes.decode())
                     print(f"DEBUG: Titan chunk: {chunk_data}")
 
                     # Format the chunk to match OpenAI's format
@@ -903,15 +904,27 @@ class BedrockClient:
         try:
             # Get the correct model ID to use (which might be the inference profile ARN)
             model_to_use = self._get_model_with_profile(model, inference_profile_arn)
-
+            
             # Format messages with [INST] tags for Mistral
-            formatted_prompt = ""
-            for msg in request_body["messages"]:
-                if msg["role"] == "user":
-                    formatted_prompt += f"<s>[INST] {msg['content']} [/INST]"
-                elif msg["role"] == "assistant":
-                    formatted_prompt += f"{msg['content']}"
-
+            formatted_prompt = "<s>"
+            for i, msg in enumerate(request_body.get("messages", [])):
+                role, content = self._get_role_and_content(msg)
+                if role == "user":
+                    formatted_prompt += f"[INST] {content} [/INST]"
+                elif role == "assistant":
+                    formatted_prompt += f"{content}</s>"
+                    # Add a new start token if this isn't the last message
+                    if i < len(request_body.get("messages", [])) - 1:
+                        formatted_prompt += "<s>"
+            
+            # Add system prompt if provided
+            if "system" in request_body and request_body["system"]:
+                system_content = request_body["system"]
+                # Insert system prompt at the beginning of the formatted prompt
+                formatted_prompt = f"<s>[INST] <<SYS>>\n{system_content}\n<</SYS>>\n\n{formatted_prompt[3:]}"
+            
+            print(f"DEBUG: Mistral formatted prompt: {formatted_prompt}")
+            
             # Format the request using Mistral's native structure
             native_request = {
                 "prompt": formatted_prompt,
@@ -919,6 +932,8 @@ class BedrockClient:
                 "temperature": request_body.get("temperature", 0.7),
                 "top_p": request_body.get("top_p", 0.9)
             }
+            
+            print(f"DEBUG: Mistral request: {native_request}")
 
             # Invoke the model with streaming
             invoke_params = {
@@ -930,15 +945,13 @@ class BedrockClient:
 
             response = self.runtime.invoke_model_with_response_stream(**invoke_params)
 
-            # Get response content type
-            content_type = response.get("ResponseMetadata", {}).get("HTTPHeaders", {}).get("x-amzn-bedrock-content-type")
-            print(f"DEBUG: Response content type: {content_type}")
-
             # Process the streaming response
             stream = response.get('body')
             for event in stream:
                 if 'chunk' in event:
-                    chunk_data = json.loads(event['chunk']['bytes'].decode())
+                    chunk_bytes = event['chunk']['bytes']
+                    chunk_data = json.loads(chunk_bytes.decode())
+                    print(f"DEBUG: Mistral chunk data: {chunk_data}")
 
                     # Format the chunk to match OpenAI's format
                     if 'outputs' in chunk_data and chunk_data['outputs']:
@@ -1048,13 +1061,20 @@ class BedrockClient:
 
             elif model.startswith("mistral"):
                 # Format for Mistral models
+                messages_with_system = list(messages)
+                
+                # Format the request body
                 request_body = {
-                    "prompt": self._format_messages_for_mistral(messages),
+                    "messages": messages_with_system,
                     "max_tokens": max_tokens or 2000,
                     "temperature": 0.7,
                     "top_p": 0.9
                 }
-
+                
+                # Add system message if provided
+                if system:
+                    request_body["system"] = system
+                
                 # Use the Mistral-specific streaming handler
                 async for chunk in self._stream_mistral_response(model, request_body, inference_profile_arn):
                     yield chunk

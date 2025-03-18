@@ -18,6 +18,7 @@ from app.utils.constants import (
     MODEL_TITAN,
     MODEL_COHERE,
     MODEL_LLAMA,
+    MODEL_MISTRAL,
     DEFAULT_MAX_TOKENS
 )
 from app.utils.chat_formatters import (
@@ -73,6 +74,7 @@ async def chat_stream(request: ChatRequest):
 
             # Use custom system prompt if provided, otherwise use default
             system_prompt = request.system_prompt if request.system_prompt else DEFAULT_MARKDOWN_SYSTEM_PROMPT
+            
             print("Streaming endpoint - System prompt:", system_prompt)  # Debug log
 
             # Get model type
@@ -97,7 +99,7 @@ async def chat_stream(request: ChatRequest):
                             content = chunk.choices[0].delta.content
                             print("Content:", content)  # Debug log
                             yield await FormatterService.format_streaming_chunk(content)
-                            
+
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
@@ -126,8 +128,8 @@ async def chat_stream(request: ChatRequest):
                 client = model_router.bedrock_client
                 try:
                     async for chunk in client._stream_claude_response(
-                        request.model, 
-                        request_body, 
+                        request.model,
+                        request_body,
                         client._get_model_with_profile(
                             request.model,
                             request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
@@ -138,7 +140,7 @@ async def chat_stream(request: ChatRequest):
                             content = chunk["choices"][0]["delta"]["content"]
                             print("Content:", content)  # Debug log
                             yield await FormatterService.format_streaming_chunk(content)
-                            
+
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
@@ -161,7 +163,7 @@ async def chat_stream(request: ChatRequest):
                             content = chunk["choices"][0]["delta"]["content"]
                             print("Content:", content)  # Debug log
                             yield await FormatterService.format_streaming_chunk(content)
-                            
+
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
@@ -170,14 +172,14 @@ async def chat_stream(request: ChatRequest):
             elif model_type == MODEL_COHERE:
                 # Cohere streaming
                 client = model_router.bedrock_client
-                
+
                 # Format messages for Cohere
                 messages = ChatService.prepare_cohere_request(request.messages)
 
                 try:
                     async for chunk in client._stream_cohere_response(
-                        request.model, 
-                        messages, 
+                        request.model,
+                        messages,
                         client._get_model_with_profile(
                             request.model,
                             request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
@@ -187,7 +189,7 @@ async def chat_stream(request: ChatRequest):
                             if "text" in chunk["generations"][0]:
                                 content = chunk["generations"][0]["text"]
                                 yield await FormatterService.format_streaming_chunk(content)
-                                
+
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
@@ -196,14 +198,14 @@ async def chat_stream(request: ChatRequest):
             elif model_type == MODEL_LLAMA:
                 # Llama streaming
                 client = model_router.bedrock_client
-                
+
                 # Format prompt for Llama
                 prompt = ChatService.prepare_llama_request(request.messages)
 
                 try:
                     async for chunk in client._stream_llama_response(
-                        request.model, 
-                        prompt, 
+                        request.model,
+                        prompt,
                         client._get_model_with_profile(
                             request.model,
                             request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
@@ -212,10 +214,38 @@ async def chat_stream(request: ChatRequest):
                         if "generation" in chunk:
                             content = chunk["generation"]
                             yield await FormatterService.format_streaming_chunk(content)
-                            
+
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
+                    yield await FormatterService.format_error_event(e)
+
+            elif model_type == MODEL_MISTRAL:
+                # Mistral streaming
+                print("Mistral streaming")
+                client = model_router.bedrock_client
+
+                try:
+                    async for chunk in client.generate_chat_completion_stream(
+                        messages=request.messages,
+                        model=request.model,
+                        system=request.system_prompt,
+                        max_tokens=request.max_tokens if hasattr(request, 'max_tokens') else DEFAULT_MAX_TOKENS,
+                        inference_profile_arn=request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
+                    ):
+                        print("Raw Mistral chunk:", chunk)  # Debug log
+                        if "choices" in chunk and len(chunk["choices"]) > 0:
+                            if "delta" in chunk["choices"][0] and "content" in chunk["choices"][0]["delta"]:
+                                content = chunk["choices"][0]["delta"]["content"]
+                                print("Mistral content:", content)  # Debug log
+                                yield await FormatterService.format_streaming_chunk(content)
+
+                    # Send done event
+                    yield await FormatterService.format_done_event()
+                except Exception as e:
+                    print(f"Error in Mistral streaming: {e}")
+                    import traceback
+                    print(traceback.format_exc())
                     yield await FormatterService.format_error_event(e)
 
             else:
