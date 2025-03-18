@@ -49,17 +49,63 @@ src/
 │   ├── chain/             # Model chaining page
 │   └── page.tsx           # Main chat interface
 ├── components/            # React components
-│   ├── ui/               # shadcn/ui components
-│   ├── chat-history.tsx  # Chat history sidebar
-│   ├── chat-message.tsx  # Individual message component
-│   ├── code-block.tsx    # Code block renderer
-│   ├── header.tsx        # Application header
-│   ├── model-selector.tsx # Model selection with system prompt
-│   └── system-prompt-settings.tsx # System prompt configuration
-├── lib/                  # Utility functions
-├── types/                # TypeScript type definitions
-└── hooks/               # Custom React hooks
+│   ├── chat-history.tsx   # Chat session management component
+│   ├── chat-message.tsx   # Individual message display component
+│   ├── markdown-renderer.tsx # Markdown rendering with code highlighting
+│   ├── model-selector.tsx # Model selection dropdown
+│   └── ui/                # UI components from shadcn/ui
+├── services/              # Service layer
+│   └── api.ts             # Centralized API service for backend communication
+├── lib/                   # Utility functions
+└── types/                 # TypeScript type definitions
 ```
+
+## API Service
+
+The application uses a centralized API service (`src/services/api.ts`) to handle all backend communication. This service provides methods for:
+
+- Fetching chat sessions
+- Creating new sessions
+- Updating session titles
+- Deleting sessions
+- Sending messages and receiving responses
+
+Example usage:
+
+```typescript
+// Fetch all sessions
+const sessions = await apiService.getSessions();
+
+// Create a new session
+const newSession = await apiService.createSession('New Chat');
+
+// Send a message
+const response = await apiService.sendMessage(
+  messages,
+  modelId,
+  systemPrompt,
+  sessionId,
+  streamingEnabled
+);
+```
+
+## Session Management
+
+Chat sessions are managed through a combination of local state and backend persistence. The application:
+
+1. Fetches existing sessions on component mount
+2. Creates new sessions when requested
+3. Updates session titles based on the first user message
+4. Deletes sessions when requested
+5. Loads messages for the selected session
+
+Sessions are stored in Redis on the backend and include:
+- Session ID
+- Title
+- Creation date
+- Last updated timestamp
+- Preview of the conversation
+- Messages
 
 ## Setup & Development
 

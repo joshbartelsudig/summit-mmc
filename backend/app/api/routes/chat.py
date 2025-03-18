@@ -7,6 +7,7 @@ import asyncio
 from typing import List, Dict, Any, Optional
 import time
 
+from app.services.redis_service import redis_service
 from app.models.schemas import ChatRequest, ChatResponse, ChatChoice, Message
 from app.services.model_router import model_router
 from app.services.chat_service import ChatService
@@ -46,8 +47,66 @@ async def chat(request: ChatRequest):
         if request.stream:
             raise HTTPException(status_code=400, detail="Use /chat/stream for streaming responses")
 
+        # Check Redis connection
+        if not redis_service.is_connected():
+            raise HTTPException(status_code=503, detail="Redis service unavailable")
+
+        # Create or get session
+        session_id = request.session_id or str(uuid.uuid4())
+        session = redis_service.get_session(session_id)
+
+        if not session:
+            # Create new session if it doesn't exist
+            print("Creating new chat session")
+            title = request.messages[0].content[:50] + "..." if request.messages else "New Chat"
+            created_id = redis_service.create_session(
+                session_id=session_id,
+                title=title,
+                model_id=request.model
+            )
+            if not created_id:
+                raise HTTPException(status_code=500, detail="Failed to create chat session")
+            session = redis_service.get_session(created_id)
+            if not session:
+                raise HTTPException(status_code=500, detail="Failed to retrieve created session")
+        
+        # Get existing messages from the session
+        existing_messages = redis_service.get_messages(session_id)
+        
+        # Add user's new message to the session
+        for message in request.messages:
+            # Only add messages that aren't already in the session
+            if not any(existing_msg.content == message.content and 
+                      existing_msg.role == message.role for existing_msg in existing_messages):
+                redis_service.add_message(session_id, message)
+        
+        # Create a new request with all messages from the session
+        session_messages = redis_service.get_messages(session_id)
+        chat_request = ChatRequest(
+            messages=session_messages,
+            model=request.model,
+            stream=request.stream,
+            system_prompt=request.system_prompt,
+            session_id=session_id,
+            inference_profile_arn=request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
+        )
+
         # Generate chat completion using the chat service
-        return await ChatService.generate_chat_completion(request)
+        response = await ChatService.generate_chat_completion(chat_request)
+        
+        # Add assistant's response to the session
+        assistant_message = response.choices[0].message
+        redis_service.add_message(session_id, assistant_message)
+        
+        # Get updated session data
+        session_data = redis_service.get_session_data(session_id, include_messages=True)
+        
+        # Update response with session information
+        response.session_id = session_id
+        response.session = session_data
+
+        return response
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating chat completion: {str(e)}")
 
@@ -66,6 +125,39 @@ async def chat_stream(request: ChatRequest):
     # Check if the stream flag is set
     if not request.stream:
         raise HTTPException(status_code=400, detail="Use /chat for non-streaming responses")
+    
+    # Check Redis connection
+    if not redis_service.is_connected():
+        raise HTTPException(status_code=503, detail="Redis service unavailable")
+    
+    # Create or get session
+    session_id = request.session_id or str(uuid.uuid4())
+    session = redis_service.get_session(session_id)
+
+    if not session:
+        # Create new session if it doesn't exist
+        print("Creating new chat session")
+        title = request.messages[0].content[:50] + "..." if request.messages else "New Chat"
+        created_id = redis_service.create_session(
+            session_id=session_id,
+            title=title,
+            model_id=request.model
+        )
+        if not created_id:
+            raise HTTPException(status_code=500, detail="Failed to create chat session")
+        session = redis_service.get_session(created_id)
+        if not session:
+            raise HTTPException(status_code=500, detail="Failed to retrieve created session")
+    
+    # Get existing messages from the session
+    existing_messages = redis_service.get_messages(session_id)
+    
+    # Add user's new message to the session
+    for message in request.messages:
+        # Only add messages that aren't already in the session
+        if not any(existing_msg.content == message.content and 
+                  existing_msg.role == message.role for existing_msg in existing_messages):
+            redis_service.add_message(session_id, message)
 
     async def generate():
         try:
@@ -74,11 +166,15 @@ async def chat_stream(request: ChatRequest):
 
             # Use custom system prompt if provided, otherwise use default
             system_prompt = request.system_prompt if request.system_prompt else DEFAULT_MARKDOWN_SYSTEM_PROMPT
-            
+
             print("Streaming endpoint - System prompt:", system_prompt)  # Debug log
 
             # Get model type
             model_type = FormatterService.get_model_type(request.model)
+            
+            # Create a message to store the assistant's response
+            assistant_message = Message(role="assistant", content="")
+            full_content = ""
 
             if model_type == MODEL_GPT:
                 # Add system message if not already present
@@ -97,9 +193,14 @@ async def chat_stream(request: ChatRequest):
                         print("Raw chunk:", chunk)  # Debug log
                         if hasattr(chunk.choices[0].delta, 'content') and chunk.choices[0].delta.content is not None:
                             content = chunk.choices[0].delta.content
+                            full_content += content
                             print("Content:", content)  # Debug log
                             yield await FormatterService.format_streaming_chunk(content)
 
+                    # Add the complete assistant message to the session
+                    assistant_message.content = full_content
+                    redis_service.add_message(session_id, assistant_message)
+                    
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
@@ -138,9 +239,14 @@ async def chat_stream(request: ChatRequest):
                         print("Raw chunk:", chunk)  # Debug log
                         if chunk.get("choices", [{}])[0].get("delta", {}).get("content"):
                             content = chunk["choices"][0]["delta"]["content"]
+                            full_content += content
                             print("Content:", content)  # Debug log
                             yield await FormatterService.format_streaming_chunk(content)
 
+                    # Add the complete assistant message to the session
+                    assistant_message.content = full_content
+                    redis_service.add_message(session_id, assistant_message)
+                    
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
@@ -161,9 +267,14 @@ async def chat_stream(request: ChatRequest):
                         print("Raw chunk:", chunk)  # Debug log
                         if chunk.get("choices", [{}])[0].get("delta", {}).get("content"):
                             content = chunk["choices"][0]["delta"]["content"]
+                            full_content += content
                             print("Content:", content)  # Debug log
                             yield await FormatterService.format_streaming_chunk(content)
 
+                    # Add the complete assistant message to the session
+                    assistant_message.content = full_content
+                    redis_service.add_message(session_id, assistant_message)
+                    
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
@@ -171,73 +282,6 @@ async def chat_stream(request: ChatRequest):
 
             elif model_type == MODEL_COHERE:
                 # Cohere streaming
-                client = model_router.bedrock_client
-
-                # Format messages for Cohere
-                messages = ChatService.prepare_cohere_request(request.messages)
-
-                try:
-                    async for chunk in client._stream_cohere_response(
-                        request.model,
-                        messages,
-                        client._get_model_with_profile(
-                            request.model,
-                            request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
-                        )
-                    ):
-                        if "generations" in chunk and len(chunk["generations"]) > 0:
-                            if "text" in chunk["generations"][0]:
-                                content = chunk["generations"][0]["text"]
-                                yield await FormatterService.format_streaming_chunk(content)
-
-                    # Send done event
-                    yield await FormatterService.format_done_event()
-                except Exception as e:
-                    yield await FormatterService.format_error_event(e)
-
-            elif model_type == MODEL_LLAMA:
-                # Llama streaming
-                client = model_router.bedrock_client
-                
-                # Format prompt for Llama
-                prompt = ChatService.prepare_llama_request(request.messages)
-                
-                # Prepare request body
-                request_body = {
-                    "messages": request.messages,
-                    "prompt": prompt,
-                    "max_tokens": request.max_tokens if hasattr(request, 'max_tokens') else DEFAULT_MAX_TOKENS,
-                    "temperature": 0.7,
-                    "top_p": 0.9
-                }
-
-                try:
-                    async for chunk in client._stream_llama_response(
-                        request.model, 
-                        request_body,
-                        client._get_model_with_profile(
-                            request.model,
-                            request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
-                        )
-                    ):
-                        print("DEBUG: Raw Llama chunk:", chunk)  # Debug log
-                        if "generation" in chunk and chunk["generation"]:
-                            content = chunk["generation"]
-                            print("DEBUG: Llama content:", content)  # Debug log
-                            yield await FormatterService.format_streaming_chunk(content)
-                        elif chunk.get("stop_reason"):
-                            print("DEBUG: Llama stop reason:", chunk["stop_reason"])  # Debug log
-                            yield await FormatterService.format_done_event()
-                            
-                except Exception as e:
-                    print(f"Error in Llama streaming: {e}")
-                    import traceback
-                    print(traceback.format_exc())
-                    yield await FormatterService.format_error_event(e)
-
-            elif model_type == MODEL_MISTRAL:
-                # Mistral streaming
-                print("Mistral streaming")
                 client = model_router.bedrock_client
 
                 try:
@@ -248,29 +292,86 @@ async def chat_stream(request: ChatRequest):
                         max_tokens=request.max_tokens if hasattr(request, 'max_tokens') else DEFAULT_MAX_TOKENS,
                         inference_profile_arn=request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
                     ):
-                        print("Raw Mistral chunk:", chunk)  # Debug log
-                        if "choices" in chunk and len(chunk["choices"]) > 0:
-                            if "delta" in chunk["choices"][0] and "content" in chunk["choices"][0]["delta"]:
-                                content = chunk["choices"][0]["delta"]["content"]
-                                print("Mistral content:", content)  # Debug log
-                                yield await FormatterService.format_streaming_chunk(content)
+                        print("Raw chunk:", chunk)  # Debug log
+                        if chunk.get("choices", [{}])[0].get("delta", {}).get("content"):
+                            content = chunk["choices"][0]["delta"]["content"]
+                            full_content += content
+                            print("Content:", content)  # Debug log
+                            yield await FormatterService.format_streaming_chunk(content)
 
+                    # Add the complete assistant message to the session
+                    assistant_message.content = full_content
+                    redis_service.add_message(session_id, assistant_message)
+                    
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
-                    print(f"Error in Mistral streaming: {e}")
-                    import traceback
-                    print(traceback.format_exc())
+                    yield await FormatterService.format_error_event(e)
+
+            elif model_type == MODEL_LLAMA:
+                # Llama streaming
+                client = model_router.bedrock_client
+
+                try:
+                    async for chunk in client.generate_chat_completion_stream(
+                        messages=request.messages,
+                        model=request.model,
+                        system=request.system_prompt,
+                        max_tokens=request.max_tokens if hasattr(request, 'max_tokens') else DEFAULT_MAX_TOKENS,
+                        inference_profile_arn=request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
+                    ):
+                        print("Raw chunk:", chunk)  # Debug log
+                        if chunk.get("choices", [{}])[0].get("delta", {}).get("content"):
+                            content = chunk["choices"][0]["delta"]["content"]
+                            full_content += content
+                            print("Content:", content)  # Debug log
+                            yield await FormatterService.format_streaming_chunk(content)
+
+                    # Add the complete assistant message to the session
+                    assistant_message.content = full_content
+                    redis_service.add_message(session_id, assistant_message)
+                    
+                    # Send done event
+                    yield await FormatterService.format_done_event()
+                except Exception as e:
+                    yield await FormatterService.format_error_event(e)
+
+            elif model_type == MODEL_MISTRAL:
+                # Mistral streaming
+                client = model_router.bedrock_client
+
+                try:
+                    async for chunk in client.generate_chat_completion_stream(
+                        messages=request.messages,
+                        model=request.model,
+                        system=request.system_prompt,
+                        max_tokens=request.max_tokens if hasattr(request, 'max_tokens') else DEFAULT_MAX_TOKENS,
+                        inference_profile_arn=request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
+                    ):
+                        print("Raw chunk:", chunk)  # Debug log
+                        if chunk.get("choices", [{}])[0].get("delta", {}).get("content"):
+                            content = chunk["choices"][0]["delta"]["content"]
+                            full_content += content
+                            print("Content:", content)  # Debug log
+                            yield await FormatterService.format_streaming_chunk(content)
+
+                    # Add the complete assistant message to the session
+                    assistant_message.content = full_content
+                    redis_service.add_message(session_id, assistant_message)
+                    
+                    # Send done event
+                    yield await FormatterService.format_done_event()
+                except Exception as e:
                     yield await FormatterService.format_error_event(e)
 
             else:
-                # Unsupported model
-                yield await FormatterService.format_error_event(
-                    Exception(f"Unsupported model type: {request.model}")
-                )
+                # Unknown model type
+                error_message = f"Unsupported model type for streaming: {model_type}"
+                print(error_message)
+                yield await FormatterService.format_error_event(Exception(error_message))
 
         except Exception as e:
-            print(f"Error in generate function: {e}")
+            print(f"Error in generate function: {str(e)}")
             yield await FormatterService.format_error_event(e)
 
     return EventSourceResponse(generate())

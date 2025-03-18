@@ -10,8 +10,22 @@ class Message(BaseModel):
     timestamp: Optional[datetime] = None
     model: Optional[str] = None
 
-# Alias Message as ChatMessage for consistency with other services
-ChatMessage = Message
+class ChatChoice(BaseModel):
+    """Chat choice model for response"""
+    index: int = 0
+    message: Message
+    finish_reason: Optional[str] = None
+
+class ChatSession(BaseModel):
+    """Chat session model"""
+    id: str
+    title: str
+    date: datetime
+    preview: str = ""
+    message_count: int = 0
+    model_id: Optional[str] = None
+    last_updated: Optional[datetime] = None
+    messages: Optional[List[Message]] = None
 
 class ChatRequest(BaseModel):
     """Chat request model"""
@@ -27,17 +41,13 @@ class ChatRequest(BaseModel):
     # top_k: Optional[int] = None
     # ignore_history: Optional[bool] = False  # Flag to ignore chat history
 
-class ChatChoice(BaseModel):
-    """Chat choice model for response"""
-    message: Message
-    finish_reason: str
-
 class ChatResponse(BaseModel):
     """Chat response model"""
     id: str
     model: str
     choices: List[ChatChoice]
     session_id: Optional[str] = None  # Session ID for chat history
+    session: Optional[ChatSession] = None
 
 class Model(BaseModel):
     """Model information"""
@@ -55,17 +65,6 @@ class ModelsResponse(BaseModel):
     """Response model for listing available models"""
     models: List[Model]
 
-class ChatSession(BaseModel):
-    """Chat session model"""
-    id: str
-    title: str
-    date: datetime
-    preview: str = ""
-    message_count: int = 0
-    model_id: Optional[str] = None
-    last_updated: Optional[datetime] = None
-    messages: Optional[List[Message]] = None
-
 class ChatSessionResponse(BaseModel):
     """Response model for chat session operations"""
     session: ChatSession
@@ -73,3 +72,6 @@ class ChatSessionResponse(BaseModel):
 class ChatSessionsResponse(BaseModel):
     """Response model for listing chat sessions"""
     sessions: List[ChatSession]
+
+# Alias Message as ChatMessage for consistency with other services
+ChatMessage = Message
