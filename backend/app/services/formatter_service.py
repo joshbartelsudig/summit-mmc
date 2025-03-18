@@ -43,15 +43,19 @@ class FormatterService:
         Returns:
             Dict[str, Any]: Formatted event data
         """
+        print(f"DEBUG: FormatterService input content: {content}")
         if format_code:
             content = format_code_blocks(content)
+            print(f"DEBUG: FormatterService after code blocks: {content}")
 
-        return {
+        formatted_event = {
             "event": event_type,
             "id": str(uuid.uuid4()),
             "retry": STREAM_RETRY_TIMEOUT,
             "data": json.dumps({"content": content})
         }
+        print(f"DEBUG: FormatterService output event: {formatted_event}")
+        return formatted_event
 
     @staticmethod
     async def format_done_event() -> Dict[str, Any]:
