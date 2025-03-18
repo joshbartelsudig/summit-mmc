@@ -57,7 +57,8 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
         rehypePlugins={[rehypeRaw]}
         components={{
           // Handle code blocks and inline code
-          code({ node, inline, className, children, ...props }) {
+          // @ts-expect-error - ReactMarkdown types are not accurate
+          code({ inline, className, children, ...props }) {
             // For inline code, return a simple styled code element
             if (inline) {
               return (

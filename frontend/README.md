@@ -17,6 +17,11 @@ A Next.js-based chat interface for interacting with multiple AI models, allowing
   - Simultaneous prompting of two models
   - Easy model switching and selection
   - Customizable system prompts per model
+  - Space-efficient UI with model selectors on the left, prompt on the right
+  - Fullscreen toggle for individual model responses
+  - One-click copy functionality for responses
+  - Recommended model pairings for quick selection
+  - Categorized prompt templates for different use cases
 
 - **Model Chaining**
   - Sequential processing through multiple models

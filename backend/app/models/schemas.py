@@ -35,6 +35,7 @@ class ChatRequest(BaseModel):
     inference_profile_arn: Optional[str] = None
     system_prompt: Optional[str] = None  # New field for custom system prompt
     session_id: Optional[str] = None  # Session ID for chat history
+    store_in_session: bool = True  # Whether to store messages in the session
     # max_tokens: Optional[int] = None
     # temperature: Optional[float] = None
     # top_p: Optional[float] = None

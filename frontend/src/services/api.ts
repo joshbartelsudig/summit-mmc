@@ -176,35 +176,38 @@ export const apiService = {
   /**
    * Send a chat message and get a response
    */
-  async sendMessage(messages: Message[], model: string, systemPrompt: string | null, sessionId: string | null, stream = true): Promise<Response> {
+  async sendMessage(
+    messages: Message[], 
+    model: string, 
+    systemPrompt: string | null, 
+    sessionId: string | null, 
+    stream = true,
+    storeInSession = true
+  ): Promise<Response> {
     try {
-      const requestBody = {
-        messages: messages.map(msg => ({
-          role: msg.role,
-          content: msg.content
-        })),
-        model,
-        stream,
-        system_prompt: systemPrompt,
-        session_id: sessionId
-      };
-      
-      const response = await fetch(`${API_BASE_URL}/chat/stream`, {
+      const response = await fetch(`${API_BASE_URL}/chat${stream ? '/stream' : ''}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          messages,
+          model,
+          stream,
+          system_prompt: systemPrompt,
+          session_id: sessionId,
+          store_in_session: storeInSession
+        }),
       });
       
       if (!response.ok) {
-        throw new Error(`Chat request failed: ${response.statusText}`);
+        throw new Error(`Failed to send message: ${response.statusText}`);
       }
       
       return response;
     } catch (error) {
-      console.error('Error sending chat message:', error);
+      console.error('Error sending message:', error);
       throw error;
     }
-  }
+  },
 };

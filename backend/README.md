@@ -29,7 +29,11 @@ A FastAPI-based backend service that provides a unified interface for interactin
 
 ## Recent Updates
 
-### Chat API Refactoring (March 2025)
+### Chat API Enhancements (March 2025)
+- Added `store_in_session` parameter to control chat history storage
+  - Optional boolean parameter to prevent storing messages in chat history
+  - Useful for non-interactive features like model comparison and chaining
+  - Prevents creation of unnecessary chat sessions
 - Improved streaming response handling for Llama models
   - Better handling of special tokens ([/INST], </s>, <s>)
   - Buffered text processing for cleaner output
@@ -147,7 +151,8 @@ pytest --cov=app tests/  # With coverage
     "message": "Your message",
     "model": "gpt-4",
     "session_id": "optional-session-id",
-    "system_prompt": "optional-custom-prompt"
+    "system_prompt": "optional-custom-prompt",
+    "store_in_session": true
   }
   ```
 
@@ -156,6 +161,7 @@ pytest --cov=app tests/  # With coverage
   - Returns Server-Sent Events (SSE)
   - Supports custom system prompts
   - Model-specific optimizations for Llama, Titan, and Mistral
+  - Supports `store_in_session` parameter to control chat history storage
 
 #### Model Management
 - `GET /api/v1/models`
@@ -180,6 +186,8 @@ pytest --cov=app tests/  # With coverage
   ```
   - Compares responses from multiple models
   - Supports custom system prompts for both models
+  - Does not create chat sessions or store messages in chat history
+  - Returns structured responses for easy side-by-side comparison
 
 #### Model Chaining
 - `POST /api/v1/chat`

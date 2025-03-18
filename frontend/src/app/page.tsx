@@ -24,6 +24,7 @@ export default function Home() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null)
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null)
+  const [forceRefresh, setForceRefresh] = useState(0); // Counter to force re-renders
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Initialize with a default session if none exists
@@ -348,6 +349,13 @@ export default function Home() {
                     // Check if this is the [DONE] marker
                     if (data.content === '[DONE]') {
                       console.log('Stream completed with DONE marker');
+                      setIsLoading(false);
+                      
+                      // Force a refresh after a small delay to ensure Mermaid diagrams render
+                      setTimeout(() => {
+                        setForceRefresh(prev => prev + 1);
+                      }, 300);
+                      
                       break;
                     }
                     
@@ -451,7 +459,7 @@ export default function Home() {
             ) : (
               <div className="space-y-4 pb-4">
                 {messages.map((message, index) => (
-                  <ChatMessage key={index} message={message} />
+                  <ChatMessage key={`${index}-${forceRefresh}`} message={message} />
                 ))}
                 <div ref={messagesEndRef} />
               </div>
