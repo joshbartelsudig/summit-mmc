@@ -11,6 +11,11 @@ A modern web application that provides a unified interface for interacting with 
   - Side-by-side model comparison
   - Model chaining for sequential processing
   - Custom system prompts for each chat
+  - Optimized compare page layout with space-efficient design
+  - Fullscreen toggle for individual model responses
+  - One-click copy functionality for model outputs
+  - Recommended model pairings for quick comparison setup
+  - Categorized prompt templates for different use cases
 
 - **Modern Web Interface**
   - Clean, responsive design

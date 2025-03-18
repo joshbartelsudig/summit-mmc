@@ -3,6 +3,8 @@
 export type Message = {
   role: 'user' | 'assistant'
   content: string
+  id?: string
+  timestamp?: Date
 }
 
 export type ModelInfo = {
@@ -17,5 +19,8 @@ export type ChatSession = {
   title: string
   date: Date
   preview: string
+  message_count?: number
+  model_id?: string
+  last_updated?: Date
   messages?: Message[]
 }

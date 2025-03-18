@@ -43,10 +43,28 @@ export function CodeBlock({ language, value, className }: CodeBlockProps) {
       try {
         if (language === 'mermaid') {
           setIsLoading(true);
-          const id = `mermaid-${Math.random().toString(36).substring(2)}`;
-          const { svg } = await mermaid.render(id, value);
-          setRenderedContent(svg);
-          setError(null);
+          
+          // Add a small delay to ensure the component is mounted and content is complete
+          setTimeout(async () => {
+            try {
+              // Generate a unique ID for each render to avoid conflicts
+              const id = `mermaid-${Math.random().toString(36).substring(2)}-${Date.now()}`;
+              
+              // Clean up the mermaid code to ensure it's valid
+              const cleanValue = value.trim();
+              
+              // Try to render the diagram
+              const { svg } = await mermaid.render(id, cleanValue);
+              setRenderedContent(svg);
+              setError(null);
+            } catch (err) {
+              console.error('Error rendering Mermaid diagram:', err);
+              setError('Failed to render diagram. Please check the syntax.');
+              setRenderedContent(value); // Fallback to plain text
+            } finally {
+              setIsLoading(false);
+            }
+          }, 200); // Delay to ensure content is fully processed
         } else if (language) {
           // Highlight code if language is specified
           const highlighted = hljs.highlight(value, { language }).value;

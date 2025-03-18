@@ -1,11 +1,10 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState } from "react"
 import { Clock, Search, Trash2, Plus } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { ChatSession } from "@/types"
 

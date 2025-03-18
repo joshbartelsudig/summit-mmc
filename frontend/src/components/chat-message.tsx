@@ -1,8 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef, ComponentProps } from 'react'
-import { Card, CardContent } from '@/components/ui/card'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
@@ -40,7 +38,7 @@ export function ChatMessage({
   className,
   ...props
 }: ChatMessageProps) {
-  const { role, content, name } = message;
+  const { role, content } = message;
   const [showCopied, setShowCopied] = useState(false);
 
   const handleCopy = () => {
@@ -70,13 +68,13 @@ export function ChatMessage({
       </div>
       <div className="ml-4 flex-1 space-y-2 overflow-hidden px-1">
         <div className="text-sm font-medium">
-          {role === "user" ? "You" : name || "Assistant"}
+          {role === "user" ? "You" : "Assistant"}
         </div>
         {isEditing ? (
           <div className="space-y-2">
             <Textarea
               value={editedContent}
-              onChange={(e) => setEditedContent(e.target.value)}
+              onChange={(e) => setEditedContent?.(e.target.value)}
               className="mt-2 w-full resize-none"
               rows={5}
             />

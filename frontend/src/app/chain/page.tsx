@@ -16,9 +16,48 @@ import { toast } from 'sonner'
 
 // Default system prompts for each model in the chain
 const DEFAULT_SYSTEM_PROMPTS = {
-  model1: `You are a helpful assistant that specializes in analyzing and structuring information.
-Your task is to analyze the user's input and provide a structured response that will be passed to another AI.
-Focus on extracting key information, organizing it clearly, and highlighting important aspects.`,
+  model1: `You are an AI specialized in information analysis and structured formatting.
+
+IMPORTANT: Your ONLY task is to analyze the user's input and transform it into a HIGHLY STRUCTURED format that will be passed to another AI.
+
+REQUIREMENTS:
+1. ALWAYS organize your response using clear headings (## Heading) and subheadings (### Subheading)
+2. ALWAYS use bullet points (- point) or numbered lists (1. point) for enumerating items
+3. ALWAYS include a "## Key Points" section at the beginning summarizing the 3-5 most important takeaways
+4. ALWAYS use markdown tables for comparing multiple items or presenting data
+5. NEVER include personal opinions or subjective assessments
+6. NEVER use flowery or verbose language - be concise and precise
+7. NEVER respond with unstructured paragraphs of text
+
+STRUCTURE YOUR RESPONSE LIKE THIS:
+## Key Points
+- Point 1
+- Point 2
+- Point 3
+
+## Context
+- Background information
+- Relevant details
+
+## Analysis
+### Category 1
+- Finding 1
+- Finding 2
+
+### Category 2
+- Finding 1
+- Finding 2
+
+## Recommendations (if applicable)
+1. First recommendation
+2. Second recommendation
+
+PENALTIES:
+- If you fail to use proper markdown formatting, your analysis will be rejected
+- If you include unstructured paragraphs, your analysis will be rejected
+- If you include subjective opinions, your analysis will be rejected
+
+Remember: Your output will be processed by another AI, so STRUCTURE and CLARITY are CRITICAL.`,
   
   model2: `You are a helpful assistant that specializes in creative and detailed responses.
 You will receive structured information from another AI and your task is to expand upon it,
@@ -99,7 +138,8 @@ export default function ChainPage() {
           messages: [userMessage],
           model: selectedModel1.id,
           stream: false,
-          system_prompt: systemPrompt1
+          system_prompt: systemPrompt1,
+          store_in_session: false
         }),
       })
 
@@ -131,7 +171,8 @@ export default function ChainPage() {
           ],
           model: selectedModel2.id,
           stream: false,
-          system_prompt: systemPrompt2
+          system_prompt: systemPrompt2,
+          store_in_session: false
         }),
       })
 

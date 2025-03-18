@@ -7,72 +7,30 @@ import asyncio
 from typing import List, Dict, Any, Optional
 import time
 
+from app.services.redis_service import redis_service
 from app.models.schemas import ChatRequest, ChatResponse, ChatChoice, Message
 from app.services.model_router import model_router
+from app.services.chat_service import ChatService
+from app.services.formatter_service import FormatterService
+from app.utils.constants import (
+    DEFAULT_MARKDOWN_SYSTEM_PROMPT,
+    MODEL_GPT,
+    MODEL_CLAUDE,
+    MODEL_TITAN,
+    MODEL_COHERE,
+    MODEL_LLAMA,
+    MODEL_MISTRAL,
+    DEFAULT_MAX_TOKENS
+)
+from app.utils.chat_formatters import (
+    prepare_messages_with_system_prompt,
+    format_messages_for_claude,
+    format_messages_for_titan,
+    format_messages_for_cohere,
+    format_messages_for_llama
+)
 
 router = APIRouter()
-
-# System prompt to encourage proper markdown formatting
-DEFAULT_MARKDOWN_SYSTEM_PROMPT = """
-You MUST format your responses using proper markdown formatting.
-
-Rules for code blocks:
-1. ALWAYS use triple backticks (```) to create code blocks, NEVER use single backticks for multi-line code.
-2. ALWAYS specify the language immediately after the opening backticks (e.g., ```python, ```javascript, ```mermaid).
-3. ALWAYS include a newline after the opening backticks with language and before the closing backticks.
-4. NEVER nest code blocks inside other code blocks.
-5. For Mermaid diagrams, always use ```mermaid as the language identifier.
-
-Examples of CORRECT code block formatting:
-
-```python
-def hello_world():
-    print("Hello, world!")
-```
-
-```javascript
-function helloWorld() {
-    console.log("Hello, world!");
-}
-```
-
-```mermaid
-graph TD
-    A[Start] --> B[Process]
-    B --> C[End]
-```
-
-Examples of INCORRECT code block formatting, you will be penalized if you follow these rules:
-
-```
-def hello_world():
-    print("Hello, world!")
-```
-
-```python def hello_world():
-    print("Hello, world!")```
-
-`def hello_world():
-    print("Hello, world!")`
-
-For Mermaid diagrams:
-1. Use proper Mermaid syntax for creating diagrams (flowcharts, sequence diagrams, gantt charts, etc.)
-2. Always start with the diagram type (graph, sequenceDiagram, gantt, etc.)
-3. Use proper indentation for readability
-
-Other markdown formatting:
-- Use # for main headings, ## for subheadings, etc.
-- Use * or - for bullet points
-- Use 1. 2. 3. for numbered lists
-- Use > for blockquotes
-- Use **text** for bold, *text* for italic
-- Use [text](URL) for links
-- Use ![alt text](URL) for images
-- Use | tables | like | this | for tables with headers
-"""
-
-# Constants
-WHITESPACE_CHARS = {' ', '\n', '\t'}
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
@@ -89,59 +47,128 @@ async def chat(request: ChatRequest):
         if request.stream:
             raise HTTPException(status_code=400, detail="Use /chat/stream for streaming responses")
 
-        # Handle messages based on model type
-        messages = list(request.messages)
-        system_content = None
+        # Check Redis connection
+        if not redis_service.is_connected():
+            raise HTTPException(status_code=503, detail="Redis service unavailable")
 
-        # Use custom system prompt if provided, otherwise use default
-        system_prompt = request.system_prompt if request.system_prompt else DEFAULT_MARKDOWN_SYSTEM_PROMPT
+        session_id = request.session_id or str(uuid.uuid4())
+        session = None
+        existing_messages = []
+        
+        # Only interact with sessions if store_in_session is True
+        if request.store_in_session:
+            # Create or get session
+            session = redis_service.get_session(session_id)
 
-        if request.model.startswith("anthropic.claude"):
-            # For Anthropic models, system message needs to be handled differently
-            system_content = system_prompt
-            non_system_messages = []
-            for msg in messages:
-                if msg.role == "system":
-                    system_content += "\n\n" + msg.content
-                else:
-                    non_system_messages.append(msg)
-            messages = non_system_messages
-        else:
-            # For other models like GPT, add system message if not present
-            if not any(msg.role == "system" for msg in messages):
-                messages.insert(0, Message(role="system", content=system_prompt))
+            if not session:
+                # Create new session if it doesn't exist
+                print("Creating new chat session")
+                title = request.messages[0].content[:50] + "..." if request.messages else "New Chat"
+                created_id = redis_service.create_session(
+                    session_id=session_id,
+                    title=title,
+                    model_id=request.model
+                )
+                if not created_id:
+                    raise HTTPException(status_code=500, detail="Failed to create chat session")
+                session = redis_service.get_session(created_id)
+                if not session:
+                    raise HTTPException(status_code=500, detail="Failed to retrieve created session")
+            
+            # Get existing messages from the session
+            existing_messages = redis_service.get_messages(session_id)
+            
+            # Add user's new message to the session
+            for message in request.messages:
+                # Only add messages that aren't already in the session
+                if not any(existing_msg.content == message.content and 
+                        existing_msg.role == message.role for existing_msg in existing_messages):
+                    redis_service.add_message(session_id, message)
 
-        # Route the request to the appropriate provider
-        response = await model_router.route_chat_completion(
-            messages=messages,
+        # Create a new request with messages
+        messages_for_request = existing_messages + request.messages if request.store_in_session else request.messages
+        chat_request = ChatRequest(
+            messages=messages_for_request,
             model=request.model,
-            system=system_content if request.model.startswith("anthropic.claude") else None,
-            max_tokens=2000 if request.model.startswith("anthropic.claude") else None,
+            stream=request.stream,
+            system_prompt=request.system_prompt,
+            session_id=session_id if request.store_in_session else None,
             inference_profile_arn=request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
         )
 
-        # Format the response
-        return ChatResponse(
-            id=str(uuid.uuid4()),
-            model=request.model,
-            choices=[
-                ChatChoice(
-                    message=Message(
-                        role="assistant",
-                        content=response["choices"][0]["message"]["content"]
-                    ),
-                    finish_reason=response["choices"][0].get("finish_reason", "stop")
-                )
-            ]
-        )
+        # Generate chat completion using the chat service
+        response = await ChatService.generate_chat_completion(chat_request)
+        
+        # Add assistant's response to the session if store_in_session is True
+        if request.store_in_session:
+            assistant_message = response.choices[0].message
+            redis_service.add_message(session_id, assistant_message)
+            
+            # Get updated session data
+            session_data = redis_service.get_session_data(session_id, include_messages=True)
+            
+            # Update response with session data
+            response.session_id = session_id
+            response.session = session_data.get('session') if session_data else None
+        
+        return response
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating chat completion: {str(e)}")
 
+
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
+    """
+    Streaming chat endpoint
+
+    Args:
+        request (ChatRequest): Chat request
+
+    Returns:
+        EventSourceResponse: Streaming response
+    """
     # Check if the stream flag is set
     if not request.stream:
         raise HTTPException(status_code=400, detail="Use /chat for non-streaming responses")
+    
+    # Check Redis connection
+    if not redis_service.is_connected():
+        raise HTTPException(status_code=503, detail="Redis service unavailable")
+    
+    session_id = request.session_id or str(uuid.uuid4())
+    session = None
+    existing_messages = []
+    
+    # Only interact with sessions if store_in_session is True
+    if request.store_in_session:
+        # Create or get session
+        session = redis_service.get_session(session_id)
+
+        if not session:
+            # Create new session if it doesn't exist
+            print("Creating new chat session")
+            title = request.messages[0].content[:50] + "..." if request.messages else "New Chat"
+            created_id = redis_service.create_session(
+                session_id=session_id,
+                title=title,
+                model_id=request.model
+            )
+            if not created_id:
+                raise HTTPException(status_code=500, detail="Failed to create chat session")
+            session = redis_service.get_session(created_id)
+            if not session:
+                raise HTTPException(status_code=500, detail="Failed to retrieve created session")
+        
+        # Get existing messages from the session
+        existing_messages = redis_service.get_messages(session_id)
+        
+        # Add user's new message to the session
+        for message in request.messages:
+            # Only add messages that aren't already in the session
+            if not any(existing_msg.content == message.content and 
+                    existing_msg.role == message.role for existing_msg in existing_messages):
+                redis_service.add_message(session_id, message)
 
     async def generate():
         try:
@@ -150,9 +177,17 @@ async def chat_stream(request: ChatRequest):
 
             # Use custom system prompt if provided, otherwise use default
             system_prompt = request.system_prompt if request.system_prompt else DEFAULT_MARKDOWN_SYSTEM_PROMPT
+
             print("Streaming endpoint - System prompt:", system_prompt)  # Debug log
 
-            if request.model.startswith("gpt"):
+            # Get model type
+            model_type = FormatterService.get_model_type(request.model)
+            
+            # Create a message to store the assistant's response
+            assistant_message = Message(role="assistant", content="")
+            full_content = ""
+
+            if model_type == MODEL_GPT:
                 # Add system message if not already present
                 if not any(msg.role == "system" for msg in messages):
                     messages.insert(0, Message(role="system", content=system_prompt))
@@ -161,10 +196,7 @@ async def chat_stream(request: ChatRequest):
                 # Azure OpenAI streaming
                 print("Final messages before API call:", messages)  # Debug log
                 response = model_router.azure_client.client.chat.completions.create(
-                    model=request.model,
-                    messages=[{"role": msg.role, "content": msg.content} for msg in messages],
-                    stream=True,
-                    max_tokens=2000
+                    **ChatService.prepare_azure_request(messages, request.model)
                 )
 
                 try:
@@ -172,48 +204,21 @@ async def chat_stream(request: ChatRequest):
                         print("Raw chunk:", chunk)  # Debug log
                         if hasattr(chunk.choices[0].delta, 'content') and chunk.choices[0].delta.content is not None:
                             content = chunk.choices[0].delta.content
+                            full_content += content
                             print("Content:", content)  # Debug log
+                            yield await FormatterService.format_streaming_chunk(content)
 
-                            # Format code blocks with proper newlines
-                            # Check for code block markers
-                            if "```" in content:
-                                # If this is an opening code block marker
-                                if content.strip().startswith("```") and not content.strip().endswith("```"):
-                                    # Ensure there's a newline after the language identifier
-                                    if not content.endswith('\n'):
-                                        content += '\n'
-                                # If this is a closing code block marker
-                                elif content.strip() == "```" or content.strip().endswith("```"):
-                                    # Ensure there's a newline before the closing marker
-                                    if not content.startswith('\n'):
-                                        content = '\n' + content
-                                    # Ensure there's a newline after the closing marker
-                                    if not content.endswith('\n'):
-                                        content += '\n'
-
-                            yield {
-                                "event": "message",
-                                "id": str(uuid.uuid4()),
-                                "retry": 15000,  # 15s retry timeout
-                                "data": json.dumps({"content": content})
-                            }
-                            await asyncio.sleep(0)  # Allow other tasks to run
+                    # Add the complete assistant message to the session if store_in_session is True
+                    if request.store_in_session and session_id:
+                        assistant_message.content = full_content
+                        redis_service.add_message(session_id, assistant_message)
+                    
                     # Send done event
-                    yield {
-                        "event": "done",
-                        "id": str(uuid.uuid4()),
-                        "retry": 15000,
-                        "data": json.dumps({"content": "[DONE]"})
-                    }
+                    yield await FormatterService.format_done_event()
                 except Exception as e:
-                    yield {
-                        "event": "error",
-                        "id": str(uuid.uuid4()),
-                        "retry": 15000,
-                        "data": json.dumps({"error": f"Streaming error: {str(e)}"})
-                    }
+                    yield await FormatterService.format_error_event(e)
 
-            elif request.model.startswith("anthropic.claude"):
+            elif model_type == MODEL_CLAUDE:
                 # Format messages for Claude
                 messages = []
                 system_message = system_prompt
@@ -225,450 +230,165 @@ async def chat_stream(request: ChatRequest):
                         messages.append(msg)
 
                 # Format request body
-                request_body = {
-                    "anthropic_version": "bedrock-2023-05-31",
-                    "max_tokens": request.max_tokens if hasattr(request, 'max_tokens') else 2000,
-                    "temperature": request.temperature if hasattr(request, 'temperature') else 0.7,
-                    "system": system_message,
-                    "messages": [
-                        {
-                            "role": msg.role,
-                            "content": [{"type": "text", "text": msg.content}]
-                        }
-                        for msg in messages
-                    ]
-                }
+                request_body = ChatService.prepare_claude_request(
+                    messages,
+                    system_message,
+                    request.max_tokens if hasattr(request, 'max_tokens') else DEFAULT_MAX_TOKENS,
+                    request.temperature if hasattr(request, 'temperature') else 0.7
+                )
 
                 # Get Claude response stream
                 client = model_router.bedrock_client
                 try:
-                    async for chunk in client._stream_claude_response(request.model, request_body, client._get_model_with_profile(
+                    async for chunk in client._stream_claude_response(
                         request.model,
-                        request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
-                    )):
+                        request_body,
+                        client._get_model_with_profile(
+                            request.model,
+                            request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
+                        )
+                    ):
                         print("Raw chunk:", chunk)  # Debug log
                         if chunk.get("choices", [{}])[0].get("delta", {}).get("content"):
                             content = chunk["choices"][0]["delta"]["content"]
+                            full_content += content
                             print("Content:", content)  # Debug log
+                            yield await FormatterService.format_streaming_chunk(content)
 
-                            # Format code blocks with proper newlines
-                            # Check for code block markers
-                            if "```" in content:
-                                # If this is an opening code block marker
-                                if content.strip().startswith("```") and not content.strip().endswith("```"):
-                                    # Ensure there's a newline after the language identifier
-                                    if not content.endswith('\n'):
-                                        content += '\n'
-                                # If this is a closing code block marker
-                                elif content.strip() == "```" or content.strip().endswith("```"):
-                                    # Ensure there's a newline before the closing marker
-                                    if not content.startswith('\n'):
-                                        content = '\n' + content
-                                    # Ensure there's a newline after the closing marker
-                                    if not content.endswith('\n'):
-                                        content += '\n'
-
-                            yield {
-                                "event": "message",
-                                "id": str(uuid.uuid4()),
-                                "retry": 15000,
-                                "data": json.dumps({"content": content})
-                            }
+                    # Add the complete assistant message to the session if store_in_session is True
+                    if request.store_in_session and session_id:
+                        assistant_message.content = full_content
+                        redis_service.add_message(session_id, assistant_message)
+                    
                     # Send done event
-                    yield {
-                        "event": "done",
-                        "id": str(uuid.uuid4()),
-                        "retry": 15000,
-                        "data": json.dumps({"content": "[DONE]"})
-                    }
+                    yield await FormatterService.format_done_event()
                 except Exception as e:
-                    yield {
-                        "event": "error",
-                        "id": str(uuid.uuid4()),
-                        "retry": 15000,
-                        "data": json.dumps({"error": f"Streaming error: {str(e)}"})
-                    }
+                    yield await FormatterService.format_error_event(e)
 
-            elif request.model.startswith("amazon.titan"):
+            elif model_type == MODEL_TITAN:
                 # Titan streaming with textGenerationConfig
                 client = model_router.bedrock_client
 
-                # Convert messages to Titan format
-                input_text = ""
-                for msg in request.messages:
-                    if msg.role == "user":
-                        input_text += f"Human: {msg.content}\n"
-                    elif msg.role == "assistant":
-                        input_text += f"Assistant: {msg.content}\n"
-                input_text += "Assistant: "
-
-                request_body = {
-                    "inputText": input_text,
-                    "maxTokens": request.max_tokens if hasattr(request, 'max_tokens') else 2000,
-                    "temperature": request.temperature if hasattr(request, 'temperature') else 0.7
-                }
-
                 try:
-                    async for chunk in client._stream_titan_response(request.model, request_body, client._get_model_with_profile(
-                        request.model,
-                        request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
-                    )):
+                    async for chunk in client.generate_chat_completion_stream(
+                        messages=request.messages,
+                        model=request.model,
+                        system=request.system_prompt,
+                        max_tokens=request.max_tokens if hasattr(request, 'max_tokens') else DEFAULT_MAX_TOKENS,
+                        inference_profile_arn=request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
+                    ):
                         print("Raw chunk:", chunk)  # Debug log
                         if chunk.get("choices", [{}])[0].get("delta", {}).get("content"):
                             content = chunk["choices"][0]["delta"]["content"]
+                            full_content += content
                             print("Content:", content)  # Debug log
+                            yield await FormatterService.format_streaming_chunk(content)
 
-                            # Format code blocks with proper newlines
-                            # Check for code block markers
-                            if "```" in content:
-                                # If this is an opening code block marker
-                                if content.strip().startswith("```") and not content.strip().endswith("```"):
-                                    # Ensure there's a newline after the language identifier
-                                    if not content.endswith('\n'):
-                                        content += '\n'
-                                # If this is a closing code block marker
-                                elif content.strip() == "```" or content.strip().endswith("```"):
-                                    # Ensure there's a newline before the closing marker
-                                    if not content.startswith('\n'):
-                                        content = '\n' + content
-                                    # Ensure there's a newline after the closing marker
-                                    if not content.endswith('\n'):
-                                        content += '\n'
-
-                            yield {
-                                "event": "message",
-                                "id": str(uuid.uuid4()),
-                                "retry": 15000,
-                                "data": json.dumps({"content": content})
-                            }
+                    # Add the complete assistant message to the session if store_in_session is True
+                    if request.store_in_session and session_id:
+                        assistant_message.content = full_content
+                        redis_service.add_message(session_id, assistant_message)
+                    
                     # Send done event
-                    yield {
-                        "event": "done",
-                        "id": str(uuid.uuid4()),
-                        "retry": 15000,
-                        "data": json.dumps({"content": "[DONE]"})
-                    }
+                    yield await FormatterService.format_done_event()
                 except Exception as e:
-                    yield {
-                        "event": "error",
-                        "id": str(uuid.uuid4()),
-                        "retry": 15000,
-                        "data": json.dumps({"error": f"Streaming error: {str(e)}"})
-                    }
+                    yield await FormatterService.format_error_event(e)
 
-            elif request.model.startswith("meta.llama"):
-                # Add system message if not already present
-                messages = list(request.messages)
-                has_system = False
-                for msg in messages:
-                    if msg.role == "system":
-                        has_system = True
-                        # Append markdown formatting instructions to existing system message
-                        msg.content += "\n\n" + system_prompt
-                        break
-
-                if not has_system:
-                    messages.insert(0, Message(role="system", content=system_prompt))
-
-                # Llama streaming with [INST] and <<SYS>> tags
+            elif model_type == MODEL_COHERE:
+                # Cohere streaming
                 client = model_router.bedrock_client
 
-                request_body = {
-                    "messages": [
-                        {
-                            "role": msg.role,
-                            "content": msg.content
-                        }
-                        for msg in messages
-                    ],
-                    "maxTokens": request.max_tokens if hasattr(request, 'max_tokens') else 2000,
-                    "temperature": request.temperature if hasattr(request, 'temperature') else 0.7,
-                    "topP": request.top_p if hasattr(request, 'top_p') else 0.9
-                }
-
                 try:
-                    async for chunk in client._stream_llama_response(request.model, request_body, client._get_model_with_profile(
-                        request.model,
-                        request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
-                    )):
+                    async for chunk in client.generate_chat_completion_stream(
+                        messages=request.messages,
+                        model=request.model,
+                        system=request.system_prompt,
+                        max_tokens=request.max_tokens if hasattr(request, 'max_tokens') else DEFAULT_MAX_TOKENS,
+                        inference_profile_arn=request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
+                    ):
                         print("Raw chunk:", chunk)  # Debug log
                         if chunk.get("choices", [{}])[0].get("delta", {}).get("content"):
                             content = chunk["choices"][0]["delta"]["content"]
+                            full_content += content
                             print("Content:", content)  # Debug log
+                            yield await FormatterService.format_streaming_chunk(content)
 
-                            # Format code blocks with proper newlines
-                            # Check for code block markers
-                            if "```" in content:
-                                # If this is an opening code block marker
-                                if content.strip().startswith("```") and not content.strip().endswith("```"):
-                                    # Ensure there's a newline after the language identifier
-                                    if not content.endswith('\n'):
-                                        content += '\n'
-                                # If this is a closing code block marker
-                                elif content.strip() == "```" or content.strip().endswith("```"):
-                                    # Ensure there's a newline before the closing marker
-                                    if not content.startswith('\n'):
-                                        content = '\n' + content
-                                    # Ensure there's a newline after the closing marker
-                                    if not content.endswith('\n'):
-                                        content += '\n'
-
-                            yield {
-                                "event": "message",
-                                "id": str(uuid.uuid4()),
-                                "retry": 15000,
-                                "data": json.dumps({"content": content})
-                            }
+                    # Add the complete assistant message to the session if store_in_session is True
+                    if request.store_in_session and session_id:
+                        assistant_message.content = full_content
+                        redis_service.add_message(session_id, assistant_message)
+                    
                     # Send done event
-                    yield {
-                        "event": "done",
-                        "id": str(uuid.uuid4()),
-                        "retry": 15000,
-                        "data": json.dumps({"content": "[DONE]"})
-                    }
+                    yield await FormatterService.format_done_event()
                 except Exception as e:
-                    yield {
-                        "event": "error",
-                        "id": str(uuid.uuid4()),
-                        "retry": 15000,
-                        "data": json.dumps({"error": f"Streaming error: {str(e)}"})
-                    }
+                    yield await FormatterService.format_error_event(e)
 
-            elif request.model.startswith("mistral"):
-                # Add system message if not already present
-                messages = list(request.messages)
-                has_system = False
-                for msg in messages:
-                    if msg.role == "system":
-                        has_system = True
-                        # Append markdown formatting instructions to existing system message
-                        msg.content += "\n\n" + system_prompt
-                        break
-
-                if not has_system:
-                    messages.insert(0, Message(role="system", content=system_prompt))
-
-                # Mistral streaming with [INST] tags
+            elif model_type == MODEL_LLAMA:
+                # Llama streaming
                 client = model_router.bedrock_client
 
-                request_body = {
-                    "messages": [
-                        {
-                            "role": msg.role,
-                            "content": msg.content
-                        }
-                        for msg in messages
-                    ],
-                    "maxTokens": request.max_tokens if hasattr(request, 'max_tokens') else 2000,
-                    "temperature": request.temperature if hasattr(request, 'temperature') else 0.7,
-                    "topP": request.top_p if hasattr(request, 'top_p') else 0.9,
-                    "topK": request.top_k if hasattr(request, 'top_k') else 50
-                }
-
                 try:
-                    async for chunk in client._stream_mistral_response(request.model, request_body, client._get_model_with_profile(
-                        request.model,
-                        request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
-                    )):
+                    async for chunk in client.generate_chat_completion_stream(
+                        messages=request.messages,
+                        model=request.model,
+                        system=request.system_prompt,
+                        max_tokens=request.max_tokens if hasattr(request, 'max_tokens') else DEFAULT_MAX_TOKENS,
+                        inference_profile_arn=request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
+                    ):
                         print("Raw chunk:", chunk)  # Debug log
                         if chunk.get("choices", [{}])[0].get("delta", {}).get("content"):
                             content = chunk["choices"][0]["delta"]["content"]
+                            full_content += content
                             print("Content:", content)  # Debug log
+                            yield await FormatterService.format_streaming_chunk(content)
 
-                            # Format code blocks with proper newlines
-                            # Check for code block markers
-                            if "```" in content:
-                                # If this is an opening code block marker
-                                if content.strip().startswith("```") and not content.strip().endswith("```"):
-                                    # Ensure there's a newline after the language identifier
-                                    if not content.endswith('\n'):
-                                        content += '\n'
-                                # If this is a closing code block marker
-                                elif content.strip() == "```" or content.strip().endswith("```"):
-                                    # Ensure there's a newline before the closing marker
-                                    if not content.startswith('\n'):
-                                        content = '\n' + content
-                                    # Ensure there's a newline after the closing marker
-                                    if not content.endswith('\n'):
-                                        content += '\n'
-
-                            yield {
-                                "event": "message",
-                                "id": str(uuid.uuid4()),
-                                "retry": 15000,
-                                "data": json.dumps({"content": content})
-                            }
+                    # Add the complete assistant message to the session if store_in_session is True
+                    if request.store_in_session and session_id:
+                        assistant_message.content = full_content
+                        redis_service.add_message(session_id, assistant_message)
+                    
                     # Send done event
-                    yield {
-                        "event": "done",
-                        "id": str(uuid.uuid4()),
-                        "retry": 15000,
-                        "data": json.dumps({"content": "[DONE]"})
-                    }
+                    yield await FormatterService.format_done_event()
                 except Exception as e:
-                    yield {
-                        "event": "error",
-                        "id": str(uuid.uuid4()),
-                        "retry": 15000,
-                        "data": json.dumps({"error": f"Streaming error: {str(e)}"})
-                    }
+                    yield await FormatterService.format_error_event(e)
 
-            elif request.model.startswith("meta.ai21"):
-                # Add system message if not already present
-                messages = list(request.messages)
-                has_system = False
-                for msg in messages:
-                    if msg.role == "system":
-                        has_system = True
-                        # Append markdown formatting instructions to existing system message
-                        msg.content += "\n\n" + system_prompt
-                        break
-
-                if not has_system:
-                    messages.insert(0, Message(role="system", content=system_prompt))
-
-                # AI21 streaming with [INST] tags
+            elif model_type == MODEL_MISTRAL:
+                # Mistral streaming
                 client = model_router.bedrock_client
 
-                request_body = {
-                    "messages": [
-                        {
-                            "role": msg.role,
-                            "content": msg.content
-                        }
-                        for msg in messages
-                    ],
-                    "maxTokens": request.max_tokens if hasattr(request, 'max_tokens') else 2000,
-                    "temperature": request.temperature if hasattr(request, 'temperature') else 0.7,
-                    "topP": request.top_p if hasattr(request, 'top_p') else 0.9,
-                    "topK": request.top_k if hasattr(request, 'top_k') else 50
-                }
-
                 try:
-                    async for chunk in client._stream_ai21_response(request.model, request_body, client._get_model_with_profile(
-                        request.model,
-                        request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
-                    )):
+                    async for chunk in client.generate_chat_completion_stream(
+                        messages=request.messages,
+                        model=request.model,
+                        system=request.system_prompt,
+                        max_tokens=request.max_tokens if hasattr(request, 'max_tokens') else DEFAULT_MAX_TOKENS,
+                        inference_profile_arn=request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
+                    ):
                         print("Raw chunk:", chunk)  # Debug log
                         if chunk.get("choices", [{}])[0].get("delta", {}).get("content"):
                             content = chunk["choices"][0]["delta"]["content"]
+                            full_content += content
                             print("Content:", content)  # Debug log
+                            yield await FormatterService.format_streaming_chunk(content)
 
-                            # Format code blocks with proper newlines
-                            # Check for code block markers
-                            if "```" in content:
-                                # If this is an opening code block marker
-                                if content.strip().startswith("```") and not content.strip().endswith("```"):
-                                    # Ensure there's a newline after the language identifier
-                                    if not content.endswith('\n'):
-                                        content += '\n'
-                                # If this is a closing code block marker
-                                elif content.strip() == "```" or content.strip().endswith("```"):
-                                    # Ensure there's a newline before the closing marker
-                                    if not content.startswith('\n'):
-                                        content = '\n' + content
-                                    # Ensure there's a newline after the closing marker
-                                    if not content.endswith('\n'):
-                                        content += '\n'
-
-                            # Add a space after each chunk if it doesn't end with whitespace
-                            # This helps with word boundaries when streaming
-                            if content and not content[-1] in WHITESPACE_CHARS:
-                                content += ' '
-
-                            yield {
-                                "event": "message",
-                                "id": str(uuid.uuid4()),
-                                "retry": 15000,
-                                "data": json.dumps({"content": content})
-                            }
+                    # Add the complete assistant message to the session if store_in_session is True
+                    if request.store_in_session and session_id:
+                        assistant_message.content = full_content
+                        redis_service.add_message(session_id, assistant_message)
+                    
                     # Send done event
-                    yield {
-                        "event": "done",
-                        "id": str(uuid.uuid4()),
-                        "retry": 15000,
-                        "data": json.dumps({"content": "[DONE]"})
-                    }
+                    yield await FormatterService.format_done_event()
                 except Exception as e:
-                    yield {
-                        "event": "error",
-                        "id": str(uuid.uuid4()),
-                        "retry": 15000,
-                        "data": json.dumps({"error": f"Streaming error: {str(e)}"})
-                    }
+                    yield await FormatterService.format_error_event(e)
 
             else:
-                # For other models (Mistral), simulate streaming
-                try:
-                    # Add system message if not already present
-                    messages = list(request.messages)
-                    has_system = False
-                    for msg in messages:
-                        if msg.role == "system":
-                            has_system = True
-                            # Append markdown formatting instructions to existing system message
-                            msg.content += "\n\n" + system_prompt
-                            break
-
-                    if not has_system:
-                        messages.insert(0, Message(role="system", content=system_prompt))
-
-                    response = await chat(request)
-                    content = response.choices[0].message.content
-
-                    # Stream in small chunks
-                    for i in range(0, len(content), 4):
-                        chunk = content[i:i+4]
-                        # Format code blocks with proper newlines
-                        # Check for code block markers
-                        if "```" in chunk:
-                            # If this is an opening code block marker
-                            if chunk.strip().startswith("```") and not chunk.strip().endswith("```"):
-                                # Ensure there's a newline after the language identifier
-                                if not chunk.endswith('\n'):
-                                    chunk += '\n'
-                            # If this is a closing code block marker
-                            elif chunk.strip() == "```" or chunk.strip().endswith("```"):
-                                # Ensure there's a newline before the closing marker
-                                if not chunk.startswith('\n'):
-                                    chunk = '\n' + chunk
-                                # Ensure there's a newline after the closing marker
-                                if not chunk.endswith('\n'):
-                                    chunk += '\n'
-
-                        # Add a space after each chunk if it doesn't end with whitespace
-                        # This helps with word boundaries when streaming
-                        if chunk and not chunk[-1] in WHITESPACE_CHARS:
-                            chunk += ' '
-
-                        yield {
-                            "event": "message",
-                            "id": str(uuid.uuid4()),
-                            "retry": 15000,
-                            "data": json.dumps({"content": chunk})
-                        }
-                        await asyncio.sleep(0.01)
-                    # Send done event
-                    yield {
-                        "event": "done",
-                        "id": str(uuid.uuid4()),
-                        "retry": 15000,
-                        "data": json.dumps({"content": "[DONE]"})
-                    }
-                except Exception as e:
-                    yield {
-                        "event": "error",
-                        "id": str(uuid.uuid4()),
-                        "retry": 15000,
-                        "data": json.dumps({"error": f"Streaming error: {str(e)}"})
-                    }
+                # Unknown model type
+                error_message = f"Unsupported model type for streaming: {model_type}"
+                print(error_message)
+                yield await FormatterService.format_error_event(Exception(error_message))
 
         except Exception as e:
-            yield {
-                "event": "error",
-                "id": str(uuid.uuid4()),
-                "retry": 15000,
-                "data": json.dumps({"error": str(e)})
-            }
+            print(f"Error in generate function: {str(e)}")
+            yield await FormatterService.format_error_event(e)
 
     return EventSourceResponse(generate())

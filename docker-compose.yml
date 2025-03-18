@@ -11,12 +11,14 @@ services:
       - AWS_REGION=${AWS_REGION}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - REDIS_HOST=${REDIS_HOST}
-      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
     volumes:
       - ./backend:/app
     restart: unless-stopped
+    depends_on:
+      - redis
 
   frontend:
     build: ./frontend
@@ -30,3 +32,17 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+  redis:
+    image: redis/redis-stack:latest
+    ports:
+      - "6379:6379"
+      - "8001:8001"
+    volumes:
+      - redis-data:/data
+    environment:
+      - REDIS_ARGS=--requirepass ${REDIS_PASSWORD}
+    restart: unless-stopped
+
+volumes:
+  redis-data:

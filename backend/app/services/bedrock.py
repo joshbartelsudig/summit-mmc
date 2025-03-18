@@ -333,21 +333,35 @@ class BedrockClient:
     def _format_messages_for_titan(self, messages: List[Union[Dict[str, Any], ChatMessage]]) -> str:
         """Format messages for Titan models"""
         formatted_messages = []
+        system_messages = []
+
+        # First, extract system messages
         for msg in messages:
             role, content = self._get_role_and_content(msg)
             if role == "system":
-                formatted_messages.append(f"System: {content}")
-            elif role == "user":
+                system_messages.append(f"System: {content}")
+
+        # Add all system messages at the beginning
+        if system_messages:
+            formatted_messages.extend(system_messages)
+            # Add an empty line after system messages for better separation
+            formatted_messages.append("")
+
+        # Then add user and assistant messages
+        for msg in messages:
+            role, content = self._get_role_and_content(msg)
+            if role == "user":
                 formatted_messages.append(f"Human: {content}")
             elif role == "assistant":
                 formatted_messages.append(f"Assistant: {content}")
+
         return "\n".join(formatted_messages) + "\nAssistant: "
 
     def _format_messages_for_claude(self, messages: List[Union[Dict[str, Any], ChatMessage]]) -> Tuple[str, List[Dict[str, Any]]]:
         """Format messages for Claude models"""
         formatted_messages = []
         system_message = None
-        
+
         for msg in messages:
             role, content = self._get_role_and_content(msg)
             if role == "system":
@@ -357,7 +371,7 @@ class BedrockClient:
                     "role": role,
                     "content": [{"type": "text", "text": content}]
                 })
-        
+
         return system_message, formatted_messages
 
     def _get_model_with_profile(self, model_id: str, inference_profile_arn: Optional[str] = None) -> str:
@@ -390,7 +404,7 @@ class BedrockClient:
         """Invoke Claude models"""
         # Get system message and formatted messages
         system_message, formatted_messages = self._format_messages_for_claude(messages)
-        
+
         # Format request body
         request_body = {
             "anthropic_version": "bedrock-2023-05-31",
@@ -641,6 +655,7 @@ class BedrockClient:
         try:
             # Get the correct model ID to use (which might be the inference profile ARN)
             model_to_use = self._get_model_with_profile(model, inference_profile_arn)
+            print(f"DEBUG: Using model ID for streaming: {model_to_use}")
 
             # Add anthropic version to request body if not present
             if "anthropic_version" not in request_body:
@@ -750,21 +765,12 @@ class BedrockClient:
             model_to_use = self._get_model_with_profile(model, inference_profile_arn)
             print(f"DEBUG: Using explicitly provided inference profile ARN: {model_to_use}")
 
-            # Format the request using Titan's native structure
-            native_request = {
-                "inputText": self._format_messages_for_titan(request_body.get("messages", [])),
-                "textGenerationConfig": {
-                    "maxTokenCount": request_body.get("max_tokens", 2000),
-                    "temperature": request_body.get("temperature", 0.7),
-                    "topP": request_body.get("top_p", 0.9),
-                    "stopSequences": []
-                }
-            }
+            print(request_body)
 
             # Invoke the model with streaming
             invoke_params = {
                 "modelId": model_to_use,
-                "body": json.dumps(native_request),
+                "body": json.dumps(request_body),
                 "contentType": "application/json",
                 "accept": "application/json"
             }
@@ -779,7 +785,8 @@ class BedrockClient:
             stream = response.get('body')
             for event in stream:
                 if 'chunk' in event:
-                    chunk_data = json.loads(event['chunk']['bytes'].decode())
+                    chunk_bytes = event['chunk']['bytes']
+                    chunk_data = json.loads(chunk_bytes.decode())
                     print(f"DEBUG: Titan chunk: {chunk_data}")
 
                     # Format the chunk to match OpenAI's format
@@ -828,11 +835,13 @@ class BedrockClient:
 
             # Format the request
             native_request = {
-                "prompt": self._format_messages_for_llama(request_body.get("messages", [])),
+                "prompt": request_body["prompt"],  # Use the pre-formatted prompt
                 "temperature": request_body.get("temperature", 0.7),
                 "top_p": request_body.get("top_p", 0.9),
                 "max_gen_len": request_body.get("max_tokens", 512)
             }
+
+            print(f"DEBUG: Llama request: {native_request}")
 
             # Invoke the model with streaming
             invoke_params = {
@@ -844,47 +853,60 @@ class BedrockClient:
 
             response = self.runtime.invoke_model_with_response_stream(**invoke_params)
 
-            # Get response content type
-            content_type = response.get("ResponseMetadata", {}).get("HTTPHeaders", {}).get("x-amzn-bedrock-content-type")
-            print(f"DEBUG: Response content type: {content_type}")
-
             # Process the streaming response
             stream = response.get('body')
+            buffer = ""
+            in_response = False  # Flag to track if we're in the actual response part
+            
             for event in stream:
                 if 'chunk' in event:
-                    chunk_data = json.loads(event['chunk']['bytes'].decode())
+                    chunk_bytes = event['chunk']['bytes']
+                    chunk_data = json.loads(chunk_bytes.decode())
                     print(f"DEBUG: Llama chunk: {chunk_data}")
 
-                    # Format the chunk to match OpenAI's format
                     if 'generation' in chunk_data:
-                        yield {
-                            "id": f"bedrock-{model}-{uuid.uuid4()}",
-                            "object": "chat.completion.chunk",
-                            "created": int(time.time()),
-                            "model": model,
-                            "choices": [
-                                {
-                                    "index": 0,
-                                    "delta": {
-                                        "content": chunk_data['generation']
-                                    },
-                                    "finish_reason": None
+                        text = chunk_data['generation']
+                        
+                        # Check for response boundary markers
+                        if "[/INST]" in text:
+                            in_response = True
+                            text = text.split("[/INST]", 1)[1]  # Take everything after [/INST]
+                        
+                        # Clean up other special tokens only if we're in the response
+                        if in_response:
+                            # Remove instruction markers
+                            text = text.replace("[INST]", "").replace("[/INST]", "")
+                            # Remove completion markers
+                            text = text.replace("</s>", "").replace("<s>", "")
+                            # Add to buffer
+                            buffer += text
+                            
+                            # If we have complete content, yield it
+                            if buffer.strip():
+                                yield {
+                                    "generation": buffer.strip(),
+                                    "prompt_token_count": chunk_data.get("prompt_token_count"),
+                                    "generation_token_count": chunk_data.get("generation_token_count"),
+                                    "stop_reason": chunk_data.get("stop_reason")
                                 }
-                            ]
-                        }
-                    elif 'stop_reason' in chunk_data:
+                                buffer = ""  # Clear the buffer after yielding
+                    
+                    # Handle stop reason
+                    if 'stop_reason' in chunk_data:
+                        # Yield any remaining buffered content
+                        if buffer.strip():
+                            yield {
+                                "generation": buffer.strip(),
+                                "prompt_token_count": chunk_data.get("prompt_token_count"),
+                                "generation_token_count": chunk_data.get("generation_token_count"),
+                                "stop_reason": None
+                            }
+                        # Then yield the stop
                         yield {
-                            "id": f"bedrock-{model}-{uuid.uuid4()}",
-                            "object": "chat.completion.chunk",
-                            "created": int(time.time()),
-                            "model": model,
-                            "choices": [
-                                {
-                                    "index": 0,
-                                    "delta": {},
-                                    "finish_reason": chunk_data['stop_reason']
-                                }
-                            ]
+                            "generation": "",
+                            "prompt_token_count": chunk_data.get("prompt_token_count"),
+                            "generation_token_count": chunk_data.get("generation_token_count"),
+                            "stop_reason": chunk_data["stop_reason"]
                         }
 
         except Exception as e:
@@ -900,12 +922,24 @@ class BedrockClient:
             model_to_use = self._get_model_with_profile(model, inference_profile_arn)
 
             # Format messages with [INST] tags for Mistral
-            formatted_prompt = ""
-            for msg in request_body["messages"]:
-                if msg["role"] == "user":
-                    formatted_prompt += f"<s>[INST] {msg['content']} [/INST]"
-                elif msg["role"] == "assistant":
-                    formatted_prompt += f"{msg['content']}"
+            formatted_prompt = "<s>"
+            for i, msg in enumerate(request_body.get("messages", [])):
+                role, content = self._get_role_and_content(msg)
+                if role == "user":
+                    formatted_prompt += f"[INST] {content} [/INST]"
+                elif role == "assistant":
+                    formatted_prompt += f"{content}</s>"
+                    # Add a new start token if this isn't the last message
+                    if i < len(request_body.get("messages", [])) - 1:
+                        formatted_prompt += "<s>"
+
+            # Add system prompt if provided
+            if "system" in request_body and request_body["system"]:
+                system_content = request_body["system"]
+                # Insert system prompt at the beginning of the formatted prompt
+                formatted_prompt = f"<s>[INST] <<SYS>>\n{system_content}\n<</SYS>>\n\n{formatted_prompt[3:]}"
+
+            print(f"DEBUG: Mistral formatted prompt: {formatted_prompt}")
 
             # Format the request using Mistral's native structure
             native_request = {
@@ -914,6 +948,8 @@ class BedrockClient:
                 "temperature": request_body.get("temperature", 0.7),
                 "top_p": request_body.get("top_p", 0.9)
             }
+
+            print(f"DEBUG: Mistral request: {native_request}")
 
             # Invoke the model with streaming
             invoke_params = {
@@ -925,15 +961,13 @@ class BedrockClient:
 
             response = self.runtime.invoke_model_with_response_stream(**invoke_params)
 
-            # Get response content type
-            content_type = response.get("ResponseMetadata", {}).get("HTTPHeaders", {}).get("x-amzn-bedrock-content-type")
-            print(f"DEBUG: Response content type: {content_type}")
-
             # Process the streaming response
             stream = response.get('body')
             for event in stream:
                 if 'chunk' in event:
-                    chunk_data = json.loads(event['chunk']['bytes'].decode())
+                    chunk_bytes = event['chunk']['bytes']
+                    chunk_data = json.loads(chunk_bytes.decode())
+                    print(f"DEBUG: Mistral chunk data: {chunk_data}")
 
                     # Format the chunk to match OpenAI's format
                     if 'outputs' in chunk_data and chunk_data['outputs']:
@@ -988,13 +1022,13 @@ class BedrockClient:
             if model.startswith("anthropic.claude"):
                 # Format for Claude models
                 system_message, formatted_messages = self._format_messages_for_claude(messages)
-                
+
                 request_body = {
                     "anthropic_version": "bedrock-2023-05-31",
                     "max_tokens": max_tokens or 2000,
                     "messages": formatted_messages
                 }
-                
+
                 if system:
                     request_body["system"] = system
                 elif system_message:
@@ -1006,8 +1040,16 @@ class BedrockClient:
 
             elif model.startswith("amazon.titan"):
                 # Format for Titan models
+                messages_with_system = list(messages)
+
+                # Add system message if provided
+                if system:
+                    # Insert system message at the beginning
+                    messages_with_system.insert(0, {"role": "system", "content": system})
+
+                # Format the request using Titan's native structure
                 request_body = {
-                    "inputText": self._format_messages_for_titan(messages),
+                    "inputText": self._format_messages_for_titan(messages_with_system),
                     "textGenerationConfig": {
                         "maxTokenCount": max_tokens or 2000,
                         "temperature": 0.7,
@@ -1035,12 +1077,19 @@ class BedrockClient:
 
             elif model.startswith("mistral"):
                 # Format for Mistral models
+                messages_with_system = list(messages)
+
+                # Format the request body
                 request_body = {
-                    "prompt": self._format_messages_for_mistral(messages),
+                    "messages": messages_with_system,
                     "max_tokens": max_tokens or 2000,
                     "temperature": 0.7,
                     "top_p": 0.9
                 }
+
+                # Add system message if provided
+                if system:
+                    request_body["system"] = system
 
                 # Use the Mistral-specific streaming handler
                 async for chunk in self._stream_mistral_response(model, request_body, inference_profile_arn):
