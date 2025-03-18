@@ -123,17 +123,29 @@ def format_messages_for_titan(messages: List[Message]) -> str:
     Returns:
         str: Formatted input text
     """
-    input_text = ""
+    formatted_messages = []
+    system_messages = []
+    
+    # First, extract system messages
+    for msg in messages:
+        if msg.role == "system":
+            system_messages.append(f"System: {msg.content}")
+    
+    # Add all system messages at the beginning
+    if system_messages:
+        formatted_messages.extend(system_messages)
+        # Add an empty line after system messages for better separation
+        formatted_messages.append("")
+    
+    # Then add user and assistant messages
     for msg in messages:
         if msg.role == "user":
-            input_text += f"Human: {msg.content}\n"
+            formatted_messages.append(f"Human: {msg.content}")
         elif msg.role == "assistant":
-            input_text += f"Assistant: {msg.content}\n"
-        elif msg.role == "system":
-            input_text += f"System: {msg.content}\n"
+            formatted_messages.append(f"Assistant: {msg.content}")
     
-    input_text += "Assistant: "
-    return input_text
+    formatted_messages.append("Assistant: ")
+    return "\n".join(formatted_messages)
 
 
 def format_messages_for_cohere(messages: List[Message]) -> List[Dict[str, str]]:

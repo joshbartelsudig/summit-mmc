@@ -333,14 +333,28 @@ class BedrockClient:
     def _format_messages_for_titan(self, messages: List[Union[Dict[str, Any], ChatMessage]]) -> str:
         """Format messages for Titan models"""
         formatted_messages = []
+        system_messages = []
+        
+        # First, extract system messages
         for msg in messages:
             role, content = self._get_role_and_content(msg)
             if role == "system":
-                formatted_messages.append(f"System: {content}")
-            elif role == "user":
+                system_messages.append(f"System: {content}")
+        
+        # Add all system messages at the beginning
+        if system_messages:
+            formatted_messages.extend(system_messages)
+            # Add an empty line after system messages for better separation
+            formatted_messages.append("")
+        
+        # Then add user and assistant messages
+        for msg in messages:
+            role, content = self._get_role_and_content(msg)
+            if role == "user":
                 formatted_messages.append(f"Human: {content}")
             elif role == "assistant":
                 formatted_messages.append(f"Assistant: {content}")
+        
         return "\n".join(formatted_messages) + "\nAssistant: "
 
     def _format_messages_for_claude(self, messages: List[Union[Dict[str, Any], ChatMessage]]) -> Tuple[str, List[Dict[str, Any]]]:
