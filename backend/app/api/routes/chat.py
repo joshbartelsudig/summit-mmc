@@ -198,26 +198,41 @@ async def chat_stream(request: ChatRequest):
             elif model_type == MODEL_LLAMA:
                 # Llama streaming
                 client = model_router.bedrock_client
-
+                
                 # Format prompt for Llama
                 prompt = ChatService.prepare_llama_request(request.messages)
+                
+                # Prepare request body
+                request_body = {
+                    "messages": request.messages,
+                    "prompt": prompt,
+                    "max_tokens": request.max_tokens if hasattr(request, 'max_tokens') else DEFAULT_MAX_TOKENS,
+                    "temperature": 0.7,
+                    "top_p": 0.9
+                }
 
                 try:
                     async for chunk in client._stream_llama_response(
-                        request.model,
-                        prompt,
+                        request.model, 
+                        request_body,
                         client._get_model_with_profile(
                             request.model,
                             request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
                         )
                     ):
-                        if "generation" in chunk:
+                        print("DEBUG: Raw Llama chunk:", chunk)  # Debug log
+                        if "generation" in chunk and chunk["generation"]:
                             content = chunk["generation"]
+                            print("DEBUG: Llama content:", content)  # Debug log
                             yield await FormatterService.format_streaming_chunk(content)
-
-                    # Send done event
-                    yield await FormatterService.format_done_event()
+                        elif chunk.get("stop_reason"):
+                            print("DEBUG: Llama stop reason:", chunk["stop_reason"])  # Debug log
+                            yield await FormatterService.format_done_event()
+                            
                 except Exception as e:
+                    print(f"Error in Llama streaming: {e}")
+                    import traceback
+                    print(traceback.format_exc())
                     yield await FormatterService.format_error_event(e)
 
             elif model_type == MODEL_MISTRAL:

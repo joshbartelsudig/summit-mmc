@@ -6,11 +6,13 @@ A FastAPI-based backend service that provides a unified interface for interactin
 
 - **Multi-Provider Support**
   - Azure OpenAI integration (GPT-3.5, GPT-4)
-  - Amazon Bedrock integration (Claude, Llama 2)
+  - Amazon Bedrock integration (Claude, Llama 2, Titan, Mistral)
   - Extensible architecture for adding new providers
 
 - **Advanced Chat Capabilities**
-  - Real-time streaming responses
+  - Real-time streaming responses with model-specific optimizations
+  - Enhanced Llama streaming with special token handling
+  - Titan and Mistral streaming support
   - Session management and history
   - Model comparison functionality
   - Model chaining for sequential processing
@@ -24,6 +26,19 @@ A FastAPI-based backend service that provides a unified interface for interactin
   - Comprehensive error handling
   - Rate limiting and request validation
   - Swagger/OpenAPI documentation
+
+## Recent Updates
+
+### Chat API Refactoring (March 2025)
+- Improved streaming response handling for Llama models
+  - Better handling of special tokens ([/INST], </s>, <s>)
+  - Buffered text processing for cleaner output
+  - Enhanced error handling and debugging
+- Added Titan and Mistral model support
+  - Implemented model-specific request formatting
+  - Added streaming capabilities for both models
+- Unified streaming response format across all models
+- Enhanced debug logging for better troubleshooting
 
 ## Project Structure
 
@@ -140,6 +155,7 @@ pytest --cov=app tests/  # With coverage
   - Streaming version of the chat endpoint
   - Returns Server-Sent Events (SSE)
   - Supports custom system prompts
+  - Model-specific optimizations for Llama, Titan, and Mistral
 
 #### Model Management
 - `GET /api/v1/models`
@@ -195,6 +211,7 @@ pytest --cov=app tests/  # With coverage
 - `AWS_REGION` - AWS region (default: "us-east-1")
 - `AWS_ACCESS_KEY_ID` - AWS access key
 - `AWS_SECRET_ACCESS_KEY` - AWS secret key
+- `AWS_BEDROCK_MODELS` - Comma-separated list of enabled Bedrock models
 
 #### Application Settings
 - `DEBUG` - Enable debug mode (default: False)
