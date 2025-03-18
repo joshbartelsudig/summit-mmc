@@ -17,14 +17,15 @@ from app.utils.constants import (
     MODEL_CLAUDE,
     MODEL_TITAN,
     MODEL_COHERE,
-    MODEL_LLAMA
+    MODEL_LLAMA,
+    MODEL_MISTRAL
 )
 from app.utils.chat_formatters import format_code_blocks
 
 
 class FormatterService:
     """Service for formatting chat messages and responses."""
-    
+
     @staticmethod
     async def format_streaming_chunk(
         content: str,
@@ -33,30 +34,30 @@ class FormatterService:
     ) -> Dict[str, Any]:
         """
         Format a streaming chunk.
-        
+
         Args:
             content (str): The content to stream
             event_type (str): The event type
             format_code (bool): Whether to format code blocks
-            
+
         Returns:
             Dict[str, Any]: Formatted event data
         """
         if format_code:
             content = format_code_blocks(content)
-            
+
         return {
             "event": event_type,
             "id": str(uuid.uuid4()),
             "retry": STREAM_RETRY_TIMEOUT,
             "data": json.dumps({"content": content})
         }
-    
+
     @staticmethod
     async def format_done_event() -> Dict[str, Any]:
         """
         Format a done event.
-        
+
         Returns:
             Dict[str, Any]: Done event data
         """
@@ -66,15 +67,15 @@ class FormatterService:
             "retry": STREAM_RETRY_TIMEOUT,
             "data": json.dumps({"content": DONE_MARKER})
         }
-    
+
     @staticmethod
     async def format_error_event(error: Exception) -> Dict[str, Any]:
         """
         Format an error event.
-        
+
         Args:
             error (Exception): The error that occurred
-            
+
         Returns:
             Dict[str, Any]: Error event data
         """
@@ -84,15 +85,15 @@ class FormatterService:
             "retry": STREAM_RETRY_TIMEOUT,
             "data": json.dumps({"error": f"Streaming error: {str(error)}"})
         }
-    
+
     @staticmethod
     def get_model_type(model: str) -> str:
         """
         Get the model type from the model name.
-        
+
         Args:
             model (str): The model name
-            
+
         Returns:
             str: The model type
         """
@@ -106,9 +107,11 @@ class FormatterService:
             return MODEL_COHERE
         elif model.startswith(MODEL_LLAMA):
             return MODEL_LLAMA
+        elif model.startswith(MODEL_MISTRAL):
+            return MODEL_MISTRAL
         else:
             return "unknown"
-    
+
     @staticmethod
     async def create_streaming_generator(
         request: ChatRequest,
@@ -116,29 +119,29 @@ class FormatterService:
     ) -> AsyncGenerator:
         """
         Create a streaming generator.
-        
+
         Args:
             request (ChatRequest): The chat request
             stream_func (AsyncGenerator): The streaming function
-            
+
         Returns:
             AsyncGenerator: The streaming generator
         """
         async for chunk in stream_func:
             yield chunk
-            
+
         # Send done event
         yield await FormatterService.format_done_event()
-    
+
     @staticmethod
     def format_messages_for_api(messages: List[Message], model_type: str) -> List[Dict[str, Any]]:
         """
         Format messages for API request.
-        
+
         Args:
             messages (List[Message]): The messages
             model_type (str): The model type
-            
+
         Returns:
             List[Dict[str, Any]]: Formatted messages
         """
