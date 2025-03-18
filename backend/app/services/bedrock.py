@@ -334,19 +334,19 @@ class BedrockClient:
         """Format messages for Titan models"""
         formatted_messages = []
         system_messages = []
-        
+
         # First, extract system messages
         for msg in messages:
             role, content = self._get_role_and_content(msg)
             if role == "system":
                 system_messages.append(f"System: {content}")
-        
+
         # Add all system messages at the beginning
         if system_messages:
             formatted_messages.extend(system_messages)
             # Add an empty line after system messages for better separation
             formatted_messages.append("")
-        
+
         # Then add user and assistant messages
         for msg in messages:
             role, content = self._get_role_and_content(msg)
@@ -354,14 +354,14 @@ class BedrockClient:
                 formatted_messages.append(f"Human: {content}")
             elif role == "assistant":
                 formatted_messages.append(f"Assistant: {content}")
-        
+
         return "\n".join(formatted_messages) + "\nAssistant: "
 
     def _format_messages_for_claude(self, messages: List[Union[Dict[str, Any], ChatMessage]]) -> Tuple[str, List[Dict[str, Any]]]:
         """Format messages for Claude models"""
         formatted_messages = []
         system_message = None
-        
+
         for msg in messages:
             role, content = self._get_role_and_content(msg)
             if role == "system":
@@ -371,7 +371,7 @@ class BedrockClient:
                     "role": role,
                     "content": [{"type": "text", "text": content}]
                 })
-        
+
         return system_message, formatted_messages
 
     def _get_model_with_profile(self, model_id: str, inference_profile_arn: Optional[str] = None) -> str:
@@ -404,7 +404,7 @@ class BedrockClient:
         """Invoke Claude models"""
         # Get system message and formatted messages
         system_message, formatted_messages = self._format_messages_for_claude(messages)
-        
+
         # Format request body
         request_body = {
             "anthropic_version": "bedrock-2023-05-31",
@@ -655,6 +655,7 @@ class BedrockClient:
         try:
             # Get the correct model ID to use (which might be the inference profile ARN)
             model_to_use = self._get_model_with_profile(model, inference_profile_arn)
+            print(f"DEBUG: Using model ID for streaming: {model_to_use}")
 
             # Add anthropic version to request body if not present
             if "anthropic_version" not in request_body:
@@ -764,21 +765,12 @@ class BedrockClient:
             model_to_use = self._get_model_with_profile(model, inference_profile_arn)
             print(f"DEBUG: Using explicitly provided inference profile ARN: {model_to_use}")
 
-            # Format the request using Titan's native structure
-            native_request = {
-                "inputText": self._format_messages_for_titan(request_body.get("messages", [])),
-                "textGenerationConfig": {
-                    "maxTokenCount": request_body.get("max_tokens", 2000),
-                    "temperature": request_body.get("temperature", 0.7),
-                    "topP": request_body.get("top_p", 0.9),
-                    "stopSequences": []
-                }
-            }
+            print(request_body)
 
             # Invoke the model with streaming
             invoke_params = {
                 "modelId": model_to_use,
-                "body": json.dumps(native_request),
+                "body": json.dumps(request_body),
                 "contentType": "application/json",
                 "accept": "application/json"
             }
@@ -867,7 +859,6 @@ class BedrockClient:
             for event in stream:
                 if 'chunk' in event:
                     chunk_data = json.loads(event['chunk']['bytes'].decode())
-                    print(f"DEBUG: Llama chunk: {chunk_data}")
 
                     # Format the chunk to match OpenAI's format
                     if 'generation' in chunk_data:
@@ -1002,13 +993,13 @@ class BedrockClient:
             if model.startswith("anthropic.claude"):
                 # Format for Claude models
                 system_message, formatted_messages = self._format_messages_for_claude(messages)
-                
+
                 request_body = {
                     "anthropic_version": "bedrock-2023-05-31",
                     "max_tokens": max_tokens or 2000,
                     "messages": formatted_messages
                 }
-                
+
                 if system:
                     request_body["system"] = system
                 elif system_message:
@@ -1020,8 +1011,16 @@ class BedrockClient:
 
             elif model.startswith("amazon.titan"):
                 # Format for Titan models
+                messages_with_system = list(messages)
+                
+                # Add system message if provided
+                if system:
+                    # Insert system message at the beginning
+                    messages_with_system.insert(0, {"role": "system", "content": system})
+                
+                # Format the request using Titan's native structure
                 request_body = {
-                    "inputText": self._format_messages_for_titan(messages),
+                    "inputText": self._format_messages_for_titan(messages_with_system),
                     "textGenerationConfig": {
                         "maxTokenCount": max_tokens or 2000,
                         "temperature": 0.7,
@@ -1029,7 +1028,7 @@ class BedrockClient:
                         "stopSequences": []
                     }
                 }
-
+                
                 # Use the Titan-specific streaming handler
                 async for chunk in self._stream_titan_response(model, request_body, inference_profile_arn):
                     yield chunk

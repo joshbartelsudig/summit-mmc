@@ -148,20 +148,18 @@ async def chat_stream(request: ChatRequest):
                 # Titan streaming with textGenerationConfig
                 client = model_router.bedrock_client
 
-                # Convert messages to Titan format
-                input_text = ChatService.prepare_titan_request(request.messages)
-
                 try:
-                    async for chunk in client._stream_titan_response(
-                        request.model, 
-                        input_text, 
-                        client._get_model_with_profile(
-                            request.model,
-                            request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
-                        )
+                    async for chunk in client.generate_chat_completion_stream(
+                        messages=request.messages,
+                        model=request.model,
+                        system=request.system_prompt,
+                        max_tokens=request.max_tokens if hasattr(request, 'max_tokens') else DEFAULT_MAX_TOKENS,
+                        inference_profile_arn=request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
                     ):
-                        if "outputText" in chunk:
-                            content = chunk["outputText"]
+                        print("Raw chunk:", chunk)  # Debug log
+                        if chunk.get("choices", [{}])[0].get("delta", {}).get("content"):
+                            content = chunk["choices"][0]["delta"]["content"]
+                            print("Content:", content)  # Debug log
                             yield await FormatterService.format_streaming_chunk(content)
                             
                     # Send done event
