@@ -16,10 +16,49 @@ import { toast } from 'sonner'
 
 // Default system prompts for each model in the chain
 const DEFAULT_SYSTEM_PROMPTS = {
-  model1: `You are a helpful assistant that specializes in analyzing and structuring information.
-Your task is to analyze the user's input and provide a structured response that will be passed to another AI.
-Focus on extracting key information, organizing it clearly, and highlighting important aspects.`,
-  
+  model1: `You are an AI specialized in information analysis and structured formatting.
+
+IMPORTANT: Your ONLY task is to analyze the user's input and transform it into a HIGHLY STRUCTURED format that will be passed to another AI.
+
+REQUIREMENTS:
+1. ALWAYS organize your response using clear headings (## Heading) and subheadings (### Subheading)
+2. ALWAYS use bullet points (- point) or numbered lists (1. point) for enumerating items
+3. ALWAYS include a "## Key Points" section at the beginning summarizing the 3-5 most important takeaways
+4. ALWAYS use markdown tables for comparing multiple items or presenting data
+5. NEVER include personal opinions or subjective assessments
+6. NEVER use flowery or verbose language - be concise and precise
+7. NEVER respond with unstructured paragraphs of text
+
+STRUCTURE YOUR RESPONSE LIKE THIS:
+## Key Points
+- Point 1
+- Point 2
+- Point 3
+
+## Context
+- Background information
+- Relevant details
+
+## Analysis
+### Category 1
+- Finding 1
+- Finding 2
+
+### Category 2
+- Finding 1
+- Finding 2
+
+## Recommendations (if applicable)
+1. First recommendation
+2. Second recommendation
+
+PENALTIES:
+- If you fail to use proper markdown formatting, your analysis will be rejected
+- If you include unstructured paragraphs, your analysis will be rejected
+- If you include subjective opinions, your analysis will be rejected
+
+Remember: Your output will be processed by another AI, so STRUCTURE and CLARITY are CRITICAL.`,
+
   model2: `You are a helpful assistant that specializes in creative and detailed responses.
 You will receive structured information from another AI and your task is to expand upon it,
 adding depth, nuance, and creative elements while maintaining accuracy.
@@ -99,40 +138,53 @@ export default function ChainPage() {
           messages: [userMessage],
           model: selectedModel1.id,
           stream: false,
-          store_in_session: false,
-          system_prompt: systemPrompt1
+          system_prompt: systemPrompt1,
+          store_in_session: false
         }),
       })
 
       if (!response1.ok) {
-        throw new Error('First model call failed')
+        throw new Error(`Error from first model: ${response1.statusText}`)
       }
 
       const data1 = await response1.json()
-      const intermediateMessage = data1.choices[0].message
-      setIntermediateResponse(intermediateMessage)
+      const intermediateContent = data1.choices[0].message.content
 
-      // Second model call
+      setIntermediateResponse({
+        role: 'assistant',
+        content: intermediateContent
+      })
+
+      // Second model call with the output from the first model
       const response2 = await fetch('http://localhost:8000/api/v1/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          messages: [userMessage, intermediateMessage],
+          messages: [
+            userMessage,
+            {
+              role: 'assistant',
+              content: `First model analysis: ${intermediateContent}`
+            }
+          ],
           model: selectedModel2.id,
           stream: false,
-          store_in_session: false,
-          system_prompt: systemPrompt2
+          system_prompt: systemPrompt2,
+          store_in_session: false
         }),
       })
 
       if (!response2.ok) {
-        throw new Error('Second model call failed')
+        throw new Error(`Error from second model: ${response2.statusText}`)
       }
 
       const data2 = await response2.json()
-      setFinalResponse(data2.choices[0].message)
+      setFinalResponse({
+        role: 'assistant',
+        content: data2.choices[0].message.content
+      })
     } catch (error) {
       console.error('Error in model chain:', error)
       toast.error('Error in model chain: ' + (error instanceof Error ? error.message : 'Unknown error'))
@@ -148,20 +200,20 @@ export default function ChainPage() {
   }
 
   return (
-    <div className="container py-6" style={{ 
-      height: 'calc(100vh - 3rem)', 
-      overflow: 'hidden', 
-      display: 'flex', 
-      flexDirection: 'column' 
+    <div className="container py-6" style={{
+      height: 'calc(100vh - 3rem)',
+      overflow: 'hidden',
+      display: 'flex',
+      flexDirection: 'column'
     }}>
       <h2 className="text-2xl font-semibold mb-4">Chain Models</h2>
-      
+
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex-1 flex flex-col overflow-hidden">
         <TabsList className="mb-2">
           <TabsTrigger value="config">Configuration</TabsTrigger>
           <TabsTrigger value="results">Results</TabsTrigger>
         </TabsList>
-        
+
         <TabsContent value="config" className="flex-1 overflow-auto">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <Card className="shadow-sm">
@@ -176,7 +228,7 @@ export default function ChainPage() {
                 />
                 <div>
                   <h3 className="text-sm font-medium mb-2">System Prompt</h3>
-                  <Textarea 
+                  <Textarea
                     value={systemPrompt1}
                     onChange={(e) => setSystemPrompt1(e.target.value)}
                     className="min-h-[150px]"
@@ -198,7 +250,7 @@ export default function ChainPage() {
                 />
                 <div>
                   <h3 className="text-sm font-medium mb-2">System Prompt</h3>
-                  <Textarea 
+                  <Textarea
                     value={systemPrompt2}
                     onChange={(e) => setSystemPrompt2(e.target.value)}
                     className="min-h-[150px]"
@@ -208,14 +260,14 @@ export default function ChainPage() {
               </CardContent>
             </Card>
           </div>
-          
+
           <div className="flex justify-end mb-4">
             <Button variant="outline" onClick={resetSystemPrompts}>
               Reset System Prompts
             </Button>
           </div>
         </TabsContent>
-        
+
         <TabsContent value="results" className="flex-1 flex flex-col overflow-hidden">
           <Card className="mb-2 shadow-sm flex-shrink-0">
             <CardHeader className="p-2">
