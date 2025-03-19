@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Send, ChevronDown, Maximize2, Minimize2, Copy, Check } from 'lucide-react'
+import { Send, ChevronDown, Maximize2, Minimize2, Copy, Check } from 'lucide-react'
 
 import { Input } from '@/components/ui/input'
 import { ModelSelector } from '@/components/model-selector'
@@ -65,8 +66,45 @@ export default function ComparePage() {
   const [models, setModels] = useState<ModelInfo[]>([])
   const [selectedModelA, setSelectedModelA] = useState<ModelInfo | null>(null)
   const [selectedModelB, setSelectedModelB] = useState<ModelInfo | null>(null)
+  const [models, setModels] = useState<ModelInfo[]>([])
+  const [selectedModelA, setSelectedModelA] = useState<ModelInfo | null>(null)
+  const [selectedModelB, setSelectedModelB] = useState<ModelInfo | null>(null)
   const [responseA, setResponseA] = useState<Message | null>(null)
   const [responseB, setResponseB] = useState<Message | null>(null)
+  const [activePromptCategory, setActivePromptCategory] = useState('analytical')
+  const [selectedPairing, setSelectedPairing] = useState<typeof RECOMMENDED_PAIRINGS[0] | null>(null)
+  const [fullscreenMode, setFullscreenMode] = useState<'none' | 'a' | 'b'>('none')
+  const [copyStatusA, setCopyStatusA] = useState(false)
+  const [copyStatusB, setCopyStatusB] = useState(false)
+
+  // Reset copy status after delay
+  useEffect(() => {
+    if (copyStatusA) {
+      const timer = setTimeout(() => setCopyStatusA(false), 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [copyStatusA])
+
+  useEffect(() => {
+    if (copyStatusB) {
+      const timer = setTimeout(() => setCopyStatusB(false), 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [copyStatusB])
+
+  // Copy response content to clipboard
+  const copyToClipboard = async (content: string, isModelA: boolean) => {
+    try {
+      await navigator.clipboard.writeText(content)
+      if (isModelA) {
+        setCopyStatusA(true)
+      } else {
+        setCopyStatusB(true)
+      }
+    } catch (err) {
+      console.error('Failed to copy text: ', err)
+    }
+  }
   const [activePromptCategory, setActivePromptCategory] = useState('analytical')
   const [selectedPairing, setSelectedPairing] = useState<typeof RECOMMENDED_PAIRINGS[0] | null>(null)
   const [fullscreenMode, setFullscreenMode] = useState<'none' | 'a' | 'b'>('none')
@@ -154,6 +192,7 @@ export default function ComparePage() {
           model: selectedModelA.id,
           stream: false,
           store_in_session: false
+          store_in_session: false
         }),
       })
 
@@ -177,6 +216,7 @@ export default function ComparePage() {
           messages: [userMessage],
           model: selectedModelB.id,
           stream: false,
+          store_in_session: false
           store_in_session: false
         }),
       })
@@ -327,6 +367,7 @@ export default function ComparePage() {
         </div>
       </div>
 
+      {/* Bottom section: Model responses */}
       {/* Bottom section: Model responses */}
       <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6 overflow-y-auto pb-6">
         {fullscreenMode === 'none' || fullscreenMode === 'a' ? (

@@ -74,17 +74,17 @@ async def chat(request: ChatRequest):
                 session = redis_service.get_session(created_id)
                 if not session:
                     raise HTTPException(status_code=500, detail="Failed to retrieve created session")
-            
+
             # Get existing messages from the session
             existing_messages = redis_service.get_messages(session_id)
-            
+
             # Add user's new message to the session
             for message in request.messages:
                 # Only add messages that aren't already in the session
-                if not any(existing_msg.content == message.content and 
+                if not any(existing_msg.content == message.content and
                         existing_msg.role == message.role for existing_msg in existing_messages):
                     redis_service.add_message(session_id, message)
-            
+
             # Use all messages from session for request
             messages_for_request = redis_service.get_messages(session_id)
 
@@ -101,15 +101,15 @@ async def chat(request: ChatRequest):
 
         # Generate chat completion using the chat service
         response = await ChatService.generate_chat_completion(chat_request)
-        
+
         # Add assistant's response to the session if store_in_session is True
         if request.store_in_session:
             assistant_message = response.choices[0].message
             redis_service.add_message(session_id, assistant_message)
-            
+
             # Get updated session data
             session_data = redis_service.get_session_data(session_id, include_messages=True)
-            
+
             # Update response with session data
             response.session_id = session_id
             response.session = session_data
@@ -134,11 +134,11 @@ async def chat_stream(request: ChatRequest):
     # Check if the stream flag is set
     if not request.stream:
         raise HTTPException(status_code=400, detail="Use /chat for non-streaming responses")
-    
+
     # Check Redis connection
     if not redis_service.is_connected():
         raise HTTPException(status_code=503, detail="Redis service unavailable")
-    
+
     session_id = request.session_id or str(uuid.uuid4())
     session = None
     existing_messages = []
@@ -162,14 +162,14 @@ async def chat_stream(request: ChatRequest):
             session = redis_service.get_session(created_id)
             if not session:
                 raise HTTPException(status_code=500, detail="Failed to retrieve created session")
-        
+
         # Get existing messages from the session
         existing_messages = redis_service.get_messages(session_id)
-        
+
         # Add user's new message to the session
         for message in request.messages:
             # Only add messages that aren't already in the session
-            if not any(existing_msg.content == message.content and 
+            if not any(existing_msg.content == message.content and
                       existing_msg.role == message.role for existing_msg in existing_messages):
                 redis_service.add_message(session_id, message)
 
@@ -188,7 +188,7 @@ async def chat_stream(request: ChatRequest):
 
             # Get model type
             model_type = FormatterService.get_model_type(request.model)
-            
+
             # Create a message to store the assistant's response
             assistant_message = Message(role="assistant", content="")
             full_content = ""
@@ -218,7 +218,7 @@ async def chat_stream(request: ChatRequest):
                     if request.store_in_session:
                         assistant_message.content = full_content
                         redis_service.add_message(session_id, assistant_message)
-                        
+
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
@@ -265,7 +265,7 @@ async def chat_stream(request: ChatRequest):
                     if request.store_in_session:
                         assistant_message.content = full_content
                         redis_service.add_message(session_id, assistant_message)
-                        
+
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
@@ -294,7 +294,7 @@ async def chat_stream(request: ChatRequest):
                     if request.store_in_session:
                         assistant_message.content = full_content
                         redis_service.add_message(session_id, assistant_message)
-                        
+
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
@@ -323,7 +323,7 @@ async def chat_stream(request: ChatRequest):
                     if request.store_in_session:
                         assistant_message.content = full_content
                         redis_service.add_message(session_id, assistant_message)
-                        
+
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
@@ -352,7 +352,7 @@ async def chat_stream(request: ChatRequest):
                     if request.store_in_session:
                         assistant_message.content = full_content
                         redis_service.add_message(session_id, assistant_message)
-                        
+
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
@@ -381,7 +381,7 @@ async def chat_stream(request: ChatRequest):
                     if request.store_in_session:
                         assistant_message.content = full_content
                         redis_service.add_message(session_id, assistant_message)
-                        
+
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:

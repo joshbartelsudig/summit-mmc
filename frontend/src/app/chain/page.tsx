@@ -140,6 +140,8 @@ export default function ChainPage() {
           stream: false,
           system_prompt: systemPrompt1,
           store_in_session: false
+          system_prompt: systemPrompt1,
+          store_in_session: false
         }),
       })
 
@@ -171,6 +173,8 @@ export default function ChainPage() {
           ],
           model: selectedModel2.id,
           stream: false,
+          system_prompt: systemPrompt2,
+          store_in_session: false
           system_prompt: systemPrompt2,
           store_in_session: false
         }),
