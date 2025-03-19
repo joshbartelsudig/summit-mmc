@@ -17,17 +17,17 @@ const processFunctionNames = (text: string) => {
   // Create a React fragment to hold all elements
   const elements: React.ReactNode[] = [];
   let lastIndex = 0;
-  
+
   // Find all function names that are not part of code blocks
   const regex = /(?<!`)\b(\w+)\(\)(?!`)/g;
   let match;
-  
+
   while ((match = regex.exec(text)) !== null) {
     // Add text before the match
     if (match.index > lastIndex) {
       elements.push(text.slice(lastIndex, match.index));
     }
-    
+
     // Add the function name with styling
     elements.push(
       <code
@@ -37,15 +37,15 @@ const processFunctionNames = (text: string) => {
         {match[0]}
       </code>
     );
-    
+
     lastIndex = match.index + match[0].length;
   }
-  
+
   // Add any remaining text
   if (lastIndex < text.length) {
     elements.push(text.slice(lastIndex));
   }
-  
+
   return elements;
 };
 
@@ -57,9 +57,9 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
         rehypePlugins={[rehypeRaw]}
         components={{
           // Handle code blocks and inline code
-          code({ node, inline, className, children, ...props }) {
+          code({ className, children, ...props }) {
             // For inline code, return a simple styled code element
-            if (inline) {
+            if (className?.includes('inline')) {
               return (
                 <code className="rounded-sm px-1 py-0.5 font-mono text-sm bg-muted" {...props}>
                   {children}
@@ -71,7 +71,7 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
             const match = /language-(\w+)/.exec(className || '');
             const language = match ? match[1] : '';
             const value = String(children).replace(/\n$/, '');
-            
+
             return (
               <CodeBlock
                 language={language}

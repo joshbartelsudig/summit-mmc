@@ -5,6 +5,7 @@ export type Message = {
   content: string
   id?: string
   timestamp?: Date
+  name?: string
 }
 
 export type ModelInfo = {

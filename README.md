@@ -33,7 +33,36 @@ The application consists of two main components:
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### Using Docker (Recommended)
+
+The easiest way to get started is using Docker:
+
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd MMC
+   ```
+
+2. Configure environment variables:
+   - Create `.env` file in the project root with your API keys and settings
+   - See the `.env.example` files in the backend and frontend directories for required variables
+
+3. Build and start the containers:
+   ```bash
+   docker compose build
+   docker compose up -d
+   ```
+
+4. Open [http://localhost:3000](http://localhost:3000) in your browser
+
+5. To stop the application:
+   ```bash
+   docker compose down
+   ```
+
+### Manual Setup
+
+#### Prerequisites
 
 - Node.js 18+ and npm
 - Python 3.11+

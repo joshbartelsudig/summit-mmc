@@ -2,16 +2,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import mermaid from "mermaid";
-import { cn } from "@/lib/utils";
 import "highlight.js/styles/github-dark.css";
 import hljs from 'highlight.js';
-
-// Add JSX namespace declaration
-declare namespace JSX {
-  interface IntrinsicElements {
-    [elemName: string]: any;
-  }
-}
 
 // Initialize mermaid
 mermaid.initialize({
@@ -20,12 +12,6 @@ mermaid.initialize({
   securityLevel: 'loose',
   fontFamily: 'monospace',
 });
-
-// Define mermaid render result type
-interface MermaidRenderResult {
-  svg: string;
-  bindFunctions?: (element: Element) => void;
-}
 
 // A custom component to render a Mermaid diagram given the string.
 const MermaidDiagram = ({ content }: { content: string }) => {

@@ -300,6 +300,13 @@ export default function Home() {
     try {
       setIsLoading(true);
 
+      // Ensure we have a selected model
+      if (!selectedModel) {
+        toast.error('Please select a model first');
+        setIsLoading(false);
+        return;
+      }
+
       // Send the message to the backend
       const response = await apiService.sendMessage(
         [...messages, userMessage],
