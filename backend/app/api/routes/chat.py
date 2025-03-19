@@ -51,59 +51,68 @@ async def chat(request: ChatRequest):
         if not redis_service.is_connected():
             raise HTTPException(status_code=503, detail="Redis service unavailable")
 
-        # Create or get session
         session_id = request.session_id or str(uuid.uuid4())
-        session = redis_service.get_session(session_id)
+        session = None
+        existing_messages = []
+        messages_for_request = request.messages
 
-        if not session:
-            # Create new session if it doesn't exist
-            print("Creating new chat session")
-            title = request.messages[0].content[:50] + "..." if request.messages else "New Chat"
-            created_id = redis_service.create_session(
-                session_id=session_id,
-                title=title,
-                model_id=request.model
-            )
-            if not created_id:
-                raise HTTPException(status_code=500, detail="Failed to create chat session")
-            session = redis_service.get_session(created_id)
+        # Only interact with sessions if store_in_session is True
+        if request.store_in_session:
+            session = redis_service.get_session(session_id)
+
             if not session:
-                raise HTTPException(status_code=500, detail="Failed to retrieve created session")
-        
-        # Get existing messages from the session
-        existing_messages = redis_service.get_messages(session_id)
-        
-        # Add user's new message to the session
-        for message in request.messages:
-            # Only add messages that aren't already in the session
-            if not any(existing_msg.content == message.content and 
-                      existing_msg.role == message.role for existing_msg in existing_messages):
-                redis_service.add_message(session_id, message)
-        
-        # Create a new request with all messages from the session
-        session_messages = redis_service.get_messages(session_id)
+                # Create new session if it doesn't exist
+                print("Creating new chat session")
+                title = request.messages[0].content[:50] + "..." if request.messages else "New Chat"
+                created_id = redis_service.create_session(
+                    session_id=session_id,
+                    title=title,
+                    model_id=request.model
+                )
+                if not created_id:
+                    raise HTTPException(status_code=500, detail="Failed to create chat session")
+                session = redis_service.get_session(created_id)
+                if not session:
+                    raise HTTPException(status_code=500, detail="Failed to retrieve created session")
+            
+            # Get existing messages from the session
+            existing_messages = redis_service.get_messages(session_id)
+            
+            # Add user's new message to the session
+            for message in request.messages:
+                # Only add messages that aren't already in the session
+                if not any(existing_msg.content == message.content and 
+                        existing_msg.role == message.role for existing_msg in existing_messages):
+                    redis_service.add_message(session_id, message)
+            
+            # Use all messages from session for request
+            messages_for_request = redis_service.get_messages(session_id)
+
+        # Create chat request with appropriate messages
         chat_request = ChatRequest(
-            messages=session_messages,
+            messages=messages_for_request,
             model=request.model,
             stream=request.stream,
             system_prompt=request.system_prompt,
-            session_id=session_id,
+            session_id=session_id if request.store_in_session else None,
+            store_in_session=request.store_in_session,
             inference_profile_arn=request.inference_profile_arn if hasattr(request, 'inference_profile_arn') else None
         )
 
         # Generate chat completion using the chat service
         response = await ChatService.generate_chat_completion(chat_request)
         
-        # Add assistant's response to the session
-        assistant_message = response.choices[0].message
-        redis_service.add_message(session_id, assistant_message)
-        
-        # Get updated session data
-        session_data = redis_service.get_session_data(session_id, include_messages=True)
-        
-        # Update response with session information
-        response.session_id = session_id
-        response.session = session_data
+        # Add assistant's response to the session if store_in_session is True
+        if request.store_in_session:
+            assistant_message = response.choices[0].message
+            redis_service.add_message(session_id, assistant_message)
+            
+            # Get updated session data
+            session_data = redis_service.get_session_data(session_id, include_messages=True)
+            
+            # Update response with session data
+            response.session_id = session_id
+            response.session = session_data
 
         return response
 
@@ -130,38 +139,46 @@ async def chat_stream(request: ChatRequest):
     if not redis_service.is_connected():
         raise HTTPException(status_code=503, detail="Redis service unavailable")
     
-    # Create or get session
     session_id = request.session_id or str(uuid.uuid4())
-    session = redis_service.get_session(session_id)
+    session = None
+    existing_messages = []
+    messages_for_request = request.messages
 
-    if not session:
-        # Create new session if it doesn't exist
-        print("Creating new chat session")
-        title = request.messages[0].content[:50] + "..." if request.messages else "New Chat"
-        created_id = redis_service.create_session(
-            session_id=session_id,
-            title=title,
-            model_id=request.model
-        )
-        if not created_id:
-            raise HTTPException(status_code=500, detail="Failed to create chat session")
-        session = redis_service.get_session(created_id)
+    # Only interact with sessions if store_in_session is True
+    if request.store_in_session:
+        session = redis_service.get_session(session_id)
+
         if not session:
-            raise HTTPException(status_code=500, detail="Failed to retrieve created session")
-    
-    # Get existing messages from the session
-    existing_messages = redis_service.get_messages(session_id)
-    
-    # Add user's new message to the session
-    for message in request.messages:
-        # Only add messages that aren't already in the session
-        if not any(existing_msg.content == message.content and 
-                  existing_msg.role == message.role for existing_msg in existing_messages):
-            redis_service.add_message(session_id, message)
+            # Create new session if it doesn't exist
+            print("Creating new chat session")
+            title = request.messages[0].content[:50] + "..." if request.messages else "New Chat"
+            created_id = redis_service.create_session(
+                session_id=session_id,
+                title=title,
+                model_id=request.model
+            )
+            if not created_id:
+                raise HTTPException(status_code=500, detail="Failed to create chat session")
+            session = redis_service.get_session(created_id)
+            if not session:
+                raise HTTPException(status_code=500, detail="Failed to retrieve created session")
+        
+        # Get existing messages from the session
+        existing_messages = redis_service.get_messages(session_id)
+        
+        # Add user's new message to the session
+        for message in request.messages:
+            # Only add messages that aren't already in the session
+            if not any(existing_msg.content == message.content and 
+                      existing_msg.role == message.role for existing_msg in existing_messages):
+                redis_service.add_message(session_id, message)
+
+        # Use all messages from session for request
+        messages_for_request = redis_service.get_messages(session_id)
 
     async def generate():
         try:
-            messages = list(request.messages)
+            messages = list(messages_for_request)
             system_content = None
 
             # Use custom system prompt if provided, otherwise use default
@@ -198,9 +215,10 @@ async def chat_stream(request: ChatRequest):
                             yield await FormatterService.format_streaming_chunk(content)
 
                     # Add the complete assistant message to the session
-                    assistant_message.content = full_content
-                    redis_service.add_message(session_id, assistant_message)
-                    
+                    if request.store_in_session:
+                        assistant_message.content = full_content
+                        redis_service.add_message(session_id, assistant_message)
+                        
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
@@ -211,7 +229,7 @@ async def chat_stream(request: ChatRequest):
                 messages = []
                 system_message = system_prompt
 
-                for msg in request.messages:
+                for msg in messages_for_request:
                     if msg.role == "system":
                         system_message = msg.content + "\n\n" + system_prompt
                     else:
@@ -244,9 +262,10 @@ async def chat_stream(request: ChatRequest):
                             yield await FormatterService.format_streaming_chunk(content)
 
                     # Add the complete assistant message to the session
-                    assistant_message.content = full_content
-                    redis_service.add_message(session_id, assistant_message)
-                    
+                    if request.store_in_session:
+                        assistant_message.content = full_content
+                        redis_service.add_message(session_id, assistant_message)
+                        
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
@@ -258,7 +277,7 @@ async def chat_stream(request: ChatRequest):
 
                 try:
                     async for chunk in client.generate_chat_completion_stream(
-                        messages=request.messages,
+                        messages=messages_for_request,
                         model=request.model,
                         system=request.system_prompt,
                         max_tokens=request.max_tokens if hasattr(request, 'max_tokens') else DEFAULT_MAX_TOKENS,
@@ -272,9 +291,10 @@ async def chat_stream(request: ChatRequest):
                             yield await FormatterService.format_streaming_chunk(content)
 
                     # Add the complete assistant message to the session
-                    assistant_message.content = full_content
-                    redis_service.add_message(session_id, assistant_message)
-                    
+                    if request.store_in_session:
+                        assistant_message.content = full_content
+                        redis_service.add_message(session_id, assistant_message)
+                        
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
@@ -286,7 +306,7 @@ async def chat_stream(request: ChatRequest):
 
                 try:
                     async for chunk in client.generate_chat_completion_stream(
-                        messages=request.messages,
+                        messages=messages_for_request,
                         model=request.model,
                         system=request.system_prompt,
                         max_tokens=request.max_tokens if hasattr(request, 'max_tokens') else DEFAULT_MAX_TOKENS,
@@ -300,9 +320,10 @@ async def chat_stream(request: ChatRequest):
                             yield await FormatterService.format_streaming_chunk(content)
 
                     # Add the complete assistant message to the session
-                    assistant_message.content = full_content
-                    redis_service.add_message(session_id, assistant_message)
-                    
+                    if request.store_in_session:
+                        assistant_message.content = full_content
+                        redis_service.add_message(session_id, assistant_message)
+                        
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
@@ -314,7 +335,7 @@ async def chat_stream(request: ChatRequest):
 
                 try:
                     async for chunk in client.generate_chat_completion_stream(
-                        messages=request.messages,
+                        messages=messages_for_request,
                         model=request.model,
                         system=request.system_prompt,
                         max_tokens=request.max_tokens if hasattr(request, 'max_tokens') else DEFAULT_MAX_TOKENS,
@@ -328,9 +349,10 @@ async def chat_stream(request: ChatRequest):
                             yield await FormatterService.format_streaming_chunk(content)
 
                     # Add the complete assistant message to the session
-                    assistant_message.content = full_content
-                    redis_service.add_message(session_id, assistant_message)
-                    
+                    if request.store_in_session:
+                        assistant_message.content = full_content
+                        redis_service.add_message(session_id, assistant_message)
+                        
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:
@@ -342,7 +364,7 @@ async def chat_stream(request: ChatRequest):
 
                 try:
                     async for chunk in client.generate_chat_completion_stream(
-                        messages=request.messages,
+                        messages=messages_for_request,
                         model=request.model,
                         system=request.system_prompt,
                         max_tokens=request.max_tokens if hasattr(request, 'max_tokens') else DEFAULT_MAX_TOKENS,
@@ -356,9 +378,10 @@ async def chat_stream(request: ChatRequest):
                             yield await FormatterService.format_streaming_chunk(content)
 
                     # Add the complete assistant message to the session
-                    assistant_message.content = full_content
-                    redis_service.add_message(session_id, assistant_message)
-                    
+                    if request.store_in_session:
+                        assistant_message.content = full_content
+                        redis_service.add_message(session_id, assistant_message)
+                        
                     # Send done event
                     yield await FormatterService.format_done_event()
                 except Exception as e:

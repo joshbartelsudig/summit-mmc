@@ -99,51 +99,40 @@ export default function ChainPage() {
           messages: [userMessage],
           model: selectedModel1.id,
           stream: false,
+          store_in_session: false,
           system_prompt: systemPrompt1
         }),
       })
 
       if (!response1.ok) {
-        throw new Error(`Error from first model: ${response1.statusText}`)
+        throw new Error('First model call failed')
       }
 
       const data1 = await response1.json()
-      const intermediateContent = data1.choices[0].message.content
-      
-      setIntermediateResponse({
-        role: 'assistant',
-        content: intermediateContent
-      })
+      const intermediateMessage = data1.choices[0].message
+      setIntermediateResponse(intermediateMessage)
 
-      // Second model call with the output from the first model
+      // Second model call
       const response2 = await fetch('http://localhost:8000/api/v1/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          messages: [
-            userMessage,
-            {
-              role: 'assistant',
-              content: `First model analysis: ${intermediateContent}`
-            }
-          ],
+          messages: [userMessage, intermediateMessage],
           model: selectedModel2.id,
           stream: false,
+          store_in_session: false,
           system_prompt: systemPrompt2
         }),
       })
 
       if (!response2.ok) {
-        throw new Error(`Error from second model: ${response2.statusText}`)
+        throw new Error('Second model call failed')
       }
 
       const data2 = await response2.json()
-      setFinalResponse({
-        role: 'assistant',
-        content: data2.choices[0].message.content
-      })
+      setFinalResponse(data2.choices[0].message)
     } catch (error) {
       console.error('Error in model chain:', error)
       toast.error('Error in model chain: ' + (error instanceof Error ? error.message : 'Unknown error'))
