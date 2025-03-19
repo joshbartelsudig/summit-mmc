@@ -15,7 +15,10 @@ interface RawMessage {
   timestamp?: string;
 }
 
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+// Use environment variable for API URL or fallback to localhost
+const API_BASE_URL = typeof window !== 'undefined' && process.env.NEXT_PUBLIC_API_URL 
+  ? `${process.env.NEXT_PUBLIC_API_URL}/api/v1`
+  : 'http://localhost:8000/api/v1';
 
 /**
  * API service for handling all backend communication
@@ -186,10 +189,14 @@ export const apiService = {
         model,
         stream,
         system_prompt: systemPrompt,
-        session_id: sessionId
+        session_id: sessionId,
+        store_in_session: true
       };
       
-      const response = await fetch(`${API_BASE_URL}/chat/stream`, {
+      // Use the appropriate endpoint based on stream parameter
+      const endpoint = stream ? 'chat/stream' : 'chat';
+      
+      const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -391,7 +391,19 @@ export default function Home() {
           if (lastMessage.role === 'assistant') {
             return prev; // Don't add another assistant message if one exists
           }
-          return [...prev, { role: 'assistant', content: data.response, timestamp: new Date() }];
+          
+          // Handle the response from the /chat endpoint
+          // The response follows the ChatResponse schema with choices array
+          if (data.choices && data.choices.length > 0) {
+            const assistantMessage = data.choices[0].message;
+            return [...prev, { 
+              role: assistantMessage.role, 
+              content: assistantMessage.content, 
+              timestamp: new Date() 
+            }];
+          }
+          
+          return prev;
         });
       }
     } catch (error) {
